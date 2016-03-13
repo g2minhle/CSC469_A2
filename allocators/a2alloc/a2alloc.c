@@ -1,5 +1,7 @@
 #include <stdlib.h>
 #include <pthread.h>
+#include <stdint.h>
+#include <stdbool.h>
 #include "memlib.h"
 
 // In byte
@@ -15,8 +17,8 @@ struct am_allocator {
 };  
 
 struct mem_block {
-  int is_free;
-  size_t mem_block_size;
+  bool is_free;
+  uint32_t mem_block_size;
   struct mem_block* next_block;
   struct mem_block* previous_block;
 };
@@ -30,7 +32,7 @@ struct superblock {
   pthread_mutex_t superblock_lock;
   struct superblock* next_superblock;
   struct superblock* previous_superblock;
-  size_t free_mem;
+  uint32_t free_mem;
 };  
 
 /* The mm_malloc routine returns a pointer to an allocated region of at least
