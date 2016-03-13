@@ -119,6 +119,61 @@ void mm_free(void *ptr)
   // unlock the superblock
 }
 
+struct mem_block* allocate_mem_block(struct mem_block* first_mem_block, 
+                                      size_t size, 
+                                      size_t multiplier) {
+  struct mem_block* result_mem_block = NULL;
+  struct mem_block* previous_mem_block = NULL;
+  pthread_mutex_lock(&foo_mutex);
+  struct mem_block* current_mem_block = first_mem_block;
+  while (current_mem_block &&
+         (current_mem_block->mem_block_size < size || !current_mem_block->is_free)) {
+    previous_mem_block = current_mem_block;
+    current_mem_block = current_mem_block->next_block;
+  }
+  
+  if(current_mem_block) {
+    // Found a memory block to be used
+    result_mem_block = current_mem_block;
+    allocateMemory = //round up to the nearest blocksize - sizeof(struct mem_block);   
+    
+    if(allocateMemory != result_mem_block->mem_block_size) { 
+      // create a new free mem block
+      struct mem_block* new_mem_block = (char*)result_mem_block + sizeof(struct mem_block) + allocateMemory;      
+      new_mem_block->is_free = TRUE;
+      new_mem_block->next_block = result_mem_block->next_block;
+      new_mem_block->previous_block = result_mem_block;
+      result_mem_block->next_block = new_mem_block;
+    }     
+  } else {
+    // reached the last block, with no available memory
+    if (previous_mem_block->is_free){
+      result_mem_block = previous_mem_block;
+      // Expand the memory
+      mem_sbrk();      
+      // Extend the mem_block size 
+      result_mem_block->mem_block_size += ;
+      
+    } else {
+      // Expand the memory
+      mem_sbrk();      
+      // Create a new free mem block
+      
+      struct mem_block* new_mem_block = (char*)previous_mem_block 
+                                        + sizeof(struct mem_block) 
+                                        + previous_mem_block->mem_block_size allocateMemory;
+      new_mem_block->next_block = NULL;
+      new_mem_block->previous_block = previous_mem_block;
+      new_mem_block->mem_block_size = allocateMemory = //round up to the nearest blocksize - sizeof(struct mem_block);   
+      previous_mem_block->next_block = new_mem_block;
+      result_mem_block = new_mem_block;
+    }
+    //sbrk to get more memory
+  }
+  result_mem_block->is_free = FALSE;
+  pthread_mutex_unlock(&foo_mutex);
+  return result_mem_block;
+}
 
 /* Before calling mm_malloc or mm_free, the application program calls mm_init
  * to perform any necessary initializations, including the allocation of the
@@ -130,6 +185,14 @@ int mm_init(void)
 	if (dseg_lo == NULL && dseg_hi == NULL) {
   	// mem_init ret: -1 if there was a problem, 0 otherwise
 	  if (mem_init() == -1 ) return -1;
+	  
+	  /* 
+	   * Consider allocate around 5 to 10 superblock in the begining 
+	   * because the bencmarker will go multithread right away.
+	   * need space for you preserved data as well
+	   */
+    mem_sbrk ();
+	  
 	  am_allocator = dseg_lo;
 	  am_allocator->heap_list = NULL;
     am_allocator->global_heap = NULL;
@@ -142,7 +205,7 @@ int mm_init(void)
     first_mem_block->previous_block = NULL;
     first_mem_block->is_free = TRUE;
     // Total space we have
-    first_mem_block->mem_block_size = dseg_hi - dseg_lo;
+    first_mem_block->mem_block_size = dseg_hi - dseg_lo + 1;
     // Minus the preserve space
     first_mem_block->mem_block_size = first_mem_block->mem_block_size - sizeof (struct am_allocator);
     // Minus the the memblock itself
