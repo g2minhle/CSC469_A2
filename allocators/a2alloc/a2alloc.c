@@ -4,6 +4,8 @@
 
 // In byte
 #define SUPERBLOCK_SIZE 8
+#define TRUE 1
+#define FALSE 1
 
 /* 
  * It is Abegail - Minh allocator 
@@ -32,6 +34,9 @@ struct superblock {
   struct superblock* previous_superblock;
   size_t free_mem;
 };  
+
+
+struct am_allocator*  am_allocator;
 
 /* The mm_malloc routine returns a pointer to an allocated region of at least
  * size bytes. The pointer must be aligned to 8 bytes, and the entire
@@ -123,8 +128,28 @@ void mm_free(void *ptr)
 int mm_init(void)
 {
 	if (dseg_lo == NULL && dseg_hi == NULL) {
-		return mem_init(); // mem_init ret: -1 if there was a problem, 0 otherwise
+  	// mem_init ret: -1 if there was a problem, 0 otherwise
+	  if (mem_init() == -1 ) return -1;
+	  am_allocator = dseg_lo;
+	  am_allocator->heap_list = NULL;
+    am_allocator->global_heap = NULL;
+    pthread_mutex_init(&am_allocator->mem_lock, NULL);
+      
+	  struct mem_block* first_mem_block = (struct mem_block*)((char*)am_allocator
+	                                      + sizeof(struct am_allocator));	                                      
+    pthread_mutex_init(&mute, NULL);
+    first_mem_block->next_block = NULL;
+    first_mem_block->previous_block = NULL;
+    first_mem_block->is_free = TRUE;
+    // Total space we have
+    first_mem_block->mem_block_size = dseg_hi - dseg_lo;
+    // Minus the preserve space
+    first_mem_block->mem_block_size = first_mem_block->mem_block_size - sizeof (struct am_allocator);
+    // Minus the the memblock itself
+    first_mem_block->mem_block_size = first_mem_block->mem_block_size - sizeof (struct mem_block); 
+		return 0; 
 	}
-  return 0; // It's already been initialized
+	// It's already been initialized
+  return 0; 
 }
 
