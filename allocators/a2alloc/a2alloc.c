@@ -1,5 +1,37 @@
 #include <stdlib.h>
+#include <pthread.h>
 #include "memlib.h"
+
+// In byte
+#define SUPERBLOCK_SIZE 8
+
+/* 
+ * It is Abegail - Minh allocator 
+ */
+struct am_allocator {
+  pthread_mutex_t mem_lock;
+  struct superblock* heap_list;
+  struct superblock* global_heap;
+};  
+
+struct mem_block {
+  int is_free;
+  size_t mem_block_size;
+  struct mem_block* next_block;
+  struct mem_block* previous_block;
+};
+
+struct superblock {
+  pid_t thread_id;
+  pthread_mutex_t thread_lock;
+  struct superblock* next_thread;
+  struct superblock* previous_thread;
+    
+  pthread_mutex_t superblock_lock;
+  struct superblock* next_superblock;
+  struct superblock* previous_superblock;
+  size_t free_mem;
+};  
 
 /* The mm_malloc routine returns a pointer to an allocated region of at least
  * size bytes. The pointer must be aligned to 8 bytes, and the entire
