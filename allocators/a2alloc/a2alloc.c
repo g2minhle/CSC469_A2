@@ -5,34 +5,40 @@
 #include "memlib.h"
 
 // In byte
+// TODO: find out the sb_size
 #define SUPERBLOCK_SIZE 8
 
-/* 
- * It is Abegail - Minh allocator 
- */
-struct am_allocator {
+struct allocator_meta {
   pthread_mutex_t mem_lock;
-  struct superblock* heap_list;
-  struct superblock* global_heap;
+  struct thread_meta* heap_list;
+  struct thread_meta* global_heap;
 };  
 
 struct mem_block {
-  bool is_free;
-  uint32_t mem_block_size;
-  struct mem_block* next_block;
-  struct mem_block* previous_block;
+  /*
+   * 1st bit: Indicate if the block is free or not
+   * 2nd bit: Indicate if the block is a large object or not
+   */
+  uint8_t flags;
+  /*
+   * Size of the memory block
+   */
+  uint32_t size;
+  struct mem_block* next;
+  struct mem_block* previous;
+};
+
+struct thread_meta {
+   pid_t thread_id;
+   pthread_mutex_t thread_lock;
+   struct thread_meta* next;   
 };
 
 struct superblock {
-  pid_t thread_id;
-  pthread_mutex_t thread_lock;
-  struct superblock* next_thread;
-  struct superblock* previous_thread;
-    
-  pthread_mutex_t superblock_lock;
-  struct superblock* next_superblock;
-  struct superblock* previous_superblock;
   uint32_t free_mem;
+  pthread_mutex_t sb_lock;   
+  struct superblock* next;
+  struct superblock* previous;
 };  
 
 /* The mm_malloc routine returns a pointer to an allocated region of at least
