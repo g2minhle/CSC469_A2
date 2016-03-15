@@ -127,7 +127,7 @@ void *mm_malloc(size_t sz) // ABE
  * mm_free routine should add the block to the pool of unallocated blocks,
  * making the memory available to future mm_malloc calls.
  */
-void mm_free(void *ptr) - Abe 
+void mm_free(void *ptr) //Abe 
 {
   (void)ptr; /* Avoid warning about unused variable */
 
@@ -176,15 +176,21 @@ struct superblock* thread_release_superblock() { - Minh
   // release global heap  
 }
 
-struct superblock* thread_accquire_superblock() {  - Abe 
-  // lock global heap
-  if global heap = null 
-    // release global heap
-    allocate_mem_block(struct mem_block* first_mem_block, 
-                                        size_t size = superlblock size , 
-                                        size_t multiplier = superlblock size ) {  
-    //lock thread heap
-    add new superbloclk
+/* */
+struct superblock* thread_acquire_superblock(struct thread_heap* theap, uint32_t sz) {  // ABE
+  // before letting a thread acquire a new superblock, lock the global heap
+  // as we'll try to get a superblock from the global heap
+      // u_0 -= s.u;
+      // u_i += s.u;
+      // a_0 -= S;
+      // a_i += S;
+
+  // acquire_global_lock();
+  // now that we have the lock, check if the global heap has any free superblocks
+  // if they do, take one of the free superblocks. if not, request more memory.
+  //struct mem_block* mblk =  allocate_superblock(); 
+  // release the global heap
+  //lock thread heap
     //release
     return superblock
     
@@ -193,16 +199,20 @@ struct superblock* thread_accquire_superblock() {  - Abe
    // release global heap
 }
 
-void free_mem_block(struct mem_block* mem_block) {  - Abe 
-  // 
+/* Free mem_block. If mem_block is a superblock, then the heap lock will be 
+ * called before setting the memory block to free, and will hold the heap lock.
+ * Before consolidating, the 
+ * */
+void free_mem_block(struct mem_block* mem_block) {  //Abe 
+
   mem_block->is_free = TRUE;
-  if (next free )
+  if (next free)
     consolidate (current, next)
   if (previous free )
     consolidate (previous, current)
 }
 
-char* allocate_larger_object(size) {  - Abe 
+char* allocate_larger_object(size) {  //Abe 
   pthread_mutex_lock(&(am_allocator->mem_lock)); 
   allocate_mem_block(struct mem_block* first_mem_block, 
                                       size_t size, 
