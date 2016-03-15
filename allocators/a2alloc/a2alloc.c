@@ -217,48 +217,64 @@ struct thread_meta* allocate_thread_meta(pid_t thread_id) {
   return result;
 }
 
+/* Return  superblock from somewhere on theap, where there is a free block of at
+ * least sz. This function requires you to have locked the theap before calling.*/
+struct superblock* find_free_superblock(struct thread_meta* theap, uint32_t sz){
+  // scan the list of superblocks in the heap, from most full to least,
+  // checking if there is free space.
+
+}
+
+/* Acquire theap's heap lock. only return once the heap lock is grabbed. */
+void lock_heap(struct thread_meta* theap){
+
+}
+
+/* Unlock the theap's heap lock */
+void unlock_heap(struct thread_meta* theap){
+
+}
 
 /* The mm_malloc routine returns a pointer to an allocated region of at least
  * size bytes. The pointer must be aligned to 8 bytes, and the entire
  * allocated region should lie within the memory region from dseg_lo to dseg_hi.
  */
-void *mm_malloc(size_t sz)
+void *mm_malloc(size_t sz) // ABE
 {
   if (sz > LARGE_OBJECT_DATA_SIZE) {
-    // sz is large. allocate the superblock from the OS and return that.
+    // the size ther are trying to allocate is too large to store in a superblock,
+    // so allocate a large object
     return allocate_large_object(sz);
   }
+  // else, we're using a superblock.
 
-  // get the hash of the current thread.
-  // now lock heap_i.
-  // scan the list of superblocks in the heap, from most full to least,
-  // checking if there is free space.
-  // check if there is no superblock that has free space.
-  if(1)
-  {
-    // if so, check the global heap for a superblock
-    if (1)
-    {
-      // allocate S bytes as a superblock.
-      // set the owner to heap i
-    }
-    else
-    {
-      // u_0 -= s.u;
-      // u_i += s.u;
-      // a_0 -= S;
-      // a_i += S;
-    }
+  // ABE: ? // separate thread metadata and make it a single block as well to sure we can hold the thread lock
+  // ABE: where do we grab the suberblock lock?
 
+  struct thread_meta* curr_theap = get_current_thread_heap();
+  lock_heap(curr_theap);
+
+  // try an get a superblock which has a free space that it large enough to store
+  // the wanted data size.
+  struct superblock* free_sb = find_free_superblock(curr_theap);
+  if (free_sb == NULL){
+      free_sb = thread_acquire_superblock(curr_theap, sz);
+      if (free_sb == NULL)
+      {
+        // we have an issue: a new superblock could not be acquired from neither
+        // the global heap, nor from global memory.
+        //release used locks before returning.
+        unlock_heap(curr_theap);
+        return NULL;
+      }
   }
 
-  // u_i += sz;
-  // s.u += sz;
-  // Done modifying the heaps, unlock heap_i.
+  // We now have a ptr to a superblock with a free block that we can use.
+  void* blk_data =  acquire_block(free_sb, sz);
 
-  (void)sz; /* Avoid warning about unused variable */
-  // Return a block from the superblock.
-  return NULL;
+  // release used locks before returning
+  unlock_heap(curr_theap);
+  return blk_data;
 }
 
 /* The mm_free routine is only guaranteed to work when it is passed pointers
