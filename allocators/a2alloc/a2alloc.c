@@ -7,10 +7,11 @@
 // ======================= Constants =======================
 // Superblock size in bytes
 // TODO: find out the sb_size
-#define SUPERBLOCK_SIZE 8
+#define SUPERBLOCK_DATA_SIZE 8
+#define SUPERBLOCK_SIZE (sizeof(struct superblock) + SUPERBLOCK_DATA_SIZE) 
 #define TRUE 1
 #define FALSE 1
-#define SUPER_BLOCK_ALIGNMENT sizeof(struct mem_block) + sizeof(struct superblock)
+#define SUPER_BLOCK_ALIGNMENT sizeof(struct mem_block) + SUPERBLOCK_SIZE
 
 // ======================= Flags =======================
 
@@ -26,6 +27,9 @@
 #define GET_LARGE_BIT(var) (var & IS_LARGE_MASK)
 #define SET_LARGE_BIT(var) (var |= IS_LARGE_MASK)
 #define CLEAR_LARGE_BIT(var) (var &= !IS_LARGE_MASK)
+
+#define GET_DATA_FROM_MEM_BLOCK(var) ((char*)var + sizeof(struct mem_block))
+#define GET_MEM_BLOCK_FROM_DATA(var) ((char*)var - sizeof(struct mem_block))
 
 // ======================= Structures =======================
 
@@ -230,6 +234,47 @@ uint32_t find_total_size_need(size_t size, size_t multiplier) {
 }
 
 
+void* allocate_large_object(uint32_t size) {
+  // Allocate memory for the global heap meta structure
+  uint32_t total_size_need =  find_total_size_need(
+    size,         
+    SUPER_BLOCK_ALIGNMENT
+  );
+  
+  struct mem_block* new_mem_block = allocate_mem_block(
+        mem_allocator->first_mem_block,
+        total_size_need
+  );
+
+  if (new_mem_block == NULL) return NULL;
+  
+  void* result = (void*)GET_DATA_FROM_MEM_BLOCK(new_mem_block);
+  
+  return result;
+}
+
+struct superblock* allocate_superblocks() {
+  // Allocate memory for the global heap meta structure
+  uint32_t total_size_need =  find_total_size_need(
+    SUPERBLOCK_SIZE,         
+    SUPER_BLOCK_ALIGNMENT
+  );
+  
+  struct mem_block* new_mem_block = allocate_mem_block(
+        mem_allocator->first_mem_block,
+        total_size_need
+  );
+
+  if (new_mem_block == NULL) return NULL;
+  
+  struct superblock* result = (struct superblock*)
+    GET_DATA_FROM_MEM_BLOCK(new_mem_block);
+  pthread_mutex_init(&result->sb_lock, NULL);
+  result->free_mem = SUPERBLOCK_DATA_SIZE;
+  return result;
+}
+
+
 struct thread_meta* allocate_thread_meta(pid_t thread_id) {
   // Allocate memory for the global heap meta structure
   uint32_t total_size_need =  find_total_size_need(
@@ -244,9 +289,9 @@ struct thread_meta* allocate_thread_meta(pid_t thread_id) {
 
   if (new_mem_block == NULL) return NULL;
 
-  struct thread_meta* result = (struct thread_meta*)(
-    (char*)new_mem_block + sizeof(struct mem_block)
-  );
+  struct thread_meta* result = (struct thread_meta*)
+    GET_DATA_FROM_MEM_BLOCK(new_mem_block);
+
   pthread_mutex_init(&result->thread_lock, NULL);
   result->thread_id = 0;
   return result;
