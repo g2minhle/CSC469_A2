@@ -4,17 +4,33 @@
 #include <stdbool.h>
 #include "memlib.h"
 
+// ======================= Constants =======================
 // Superblock size in bytes
 // TODO: find out the sb_size
 #define SUPERBLOCK_SIZE 8
+
+// ======================= Flags =======================
+
 #define IS_FREE_MASK 0x1
 #define IS_LARGE_MASK 0x2
+
+// ======================= Macros =======================
+
+#define GET_FREE_BIT(var) (var & IS_FREE_MASK)
+#define SET_FREE_BIT(var) (var |= IS_FREE_MASK)
+#define CLEAR_FREE_BIT(var) (var &= !IS_FREE_MASK)
+
+#define GET_LARGE_BIT(var) (var & IS_LARGE_MASK)
+#define SET_LARGE_BIT(var) (var |= IS_LARGE_MASK)
+#define CLEAR_LARGE_BIT(var) (var &= !IS_LARGE_MASK)
+
+// ======================= Structures =======================
 
 struct allocator_meta {
   pthread_mutex_t mem_lock;
   struct thread_meta* heap_list;
   struct thread_meta* global_heap;
-};  
+};
 
 struct mem_block {
   /*
@@ -30,15 +46,16 @@ struct mem_block {
 struct thread_meta {
    pid_t thread_id;
    pthread_mutex_t thread_lock;
-   struct thread_meta* next;   
+   struct thread_meta* next;
 };
 
 struct superblock {
   uint32_t free_mem;
-  pthread_mutex_t sb_lock;   
+  pthread_mutex_t sb_lock;
   struct superblock* next;
   struct superblock* previous;
-};  
+  struct thread_meta* thread_heap;
+};
 
 /* The mm_malloc routine returns a pointer to an allocated region of at least
  * size bytes. The pointer must be aligned to 8 bytes, and the entire
