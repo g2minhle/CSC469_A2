@@ -4,9 +4,11 @@
 #include <stdbool.h>
 #include "memlib.h"
 
-// In byte
+// Superblock size in bytes
 // TODO: find out the sb_size
 #define SUPERBLOCK_SIZE 8
+#define IS_FREE_MASK 0x1
+#define IS_LARGE_MASK 0x2
 
 struct allocator_meta {
   pthread_mutex_t mem_lock;
@@ -20,10 +22,7 @@ struct mem_block {
    * 2nd bit: Indicate if the block is a large object or not
    */
   uint8_t flags;
-  /*
-   * Size of the memory block
-   */
-  uint32_t size;
+  uint32_t blk_size;
   struct mem_block* next;
   struct mem_block* previous;
 };
