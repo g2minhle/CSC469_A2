@@ -5,13 +5,15 @@
 #include "memlib.h"
 
 // ======================= Constants =======================
+
+#define TRUE 1
+#define FALSE 1
+#define LARGE_OBJECT_DATA_SIZE (SUPERBLOCK_DATA_SIZE / 2)
 // Superblock size in bytes
 // TODO: find out the sb_size
 #define SUPERBLOCK_DATA_SIZE 8
 #define SUPERBLOCK_SIZE (sizeof(struct superblock) + SUPERBLOCK_DATA_SIZE) 
-#define TRUE 1
-#define FALSE 1
-#define SUPER_BLOCK_ALIGNMENT sizeof(struct mem_block) + SUPERBLOCK_SIZE
+#define SUPER_BLOCK_ALIGNMENT (sizeof(struct mem_block) + SUPERBLOCK_SIZE)
 
 // ======================= Flags =======================
 
@@ -20,16 +22,16 @@
 
 // ======================= Macros =======================
 
-#define GET_FREE_BIT(var) (var & IS_FREE_MASK)
-#define SET_FREE_BIT(var) (var |= IS_FREE_MASK)
-#define CLEAR_FREE_BIT(var) (var &= !IS_FREE_MASK)
+#define GET_FREE_BIT(var) (var->flags & IS_FREE_MASK)
+#define SET_FREE_BIT(var) (var->flags |= IS_FREE_MASK)
+#define CLEAR_FREE_BIT(var) (var->flags &= !IS_FREE_MASK)
 
-#define GET_LARGE_BIT(var) (var & IS_LARGE_MASK)
-#define SET_LARGE_BIT(var) (var |= IS_LARGE_MASK)
-#define CLEAR_LARGE_BIT(var) (var &= !IS_LARGE_MASK)
+#define GET_LARGE_BIT(var) (var->flags & IS_LARGE_MASK)
+#define SET_LARGE_BIT(var) (var->flags |= IS_LARGE_MASK)
+#define CLEAR_LARGE_BIT(var) (var->flags &= !IS_LARGE_MASK)
 
 #define GET_DATA_FROM_MEM_BLOCK(var) ((char*)var + sizeof(struct mem_block))
-#define GET_MEM_BLOCK_FROM_DATA(var) ((char*)var - sizeof(struct mem_block))
+#define GET_MEM_BLOCK_FROM_DATA(var) ((struct mem_block*)(char*)var - sizeof(struct mem_block))
 
 // ======================= Structures =======================
 
@@ -68,88 +70,6 @@ struct superblock {
 
 struct allocator_meta*  mem_allocator;
 
-/* The mm_malloc routine returns a pointer to an allocated region of at least
- * size bytes. The pointer must be aligned to 8 bytes, and the entire
- * allocated region should lie within the memory region from dseg_lo to dseg_hi.
- */
-void *mm_malloc(size_t sz)
-{
-  // sz is large. allocate the superblock from the OS and return that.
-  // get the hash of the current thread.
-  // now lock heap_i.
-  // scan the list of superblocks in the heap, from most full to least,
-  // checking if there is free space.
-  // check if there is no superblock that has free space.
-  if(1)
-  {
-    // if so, check the global heap for a superblock
-    if (1)
-    {
-      // allocate S bytes as a superblock.
-      // set the owner to heap i
-    }
-    else
-    {
-      // u_0 -= s.u;
-      // u_i += s.u;
-      // a_0 -= S;
-      // a_i += S;
-    }
-
-  }
-
-  // u_i += sz;
-  // s.u += sz;
-  // Done modifying the heaps, unlock heap_i.
-
-  (void)sz; /* Avoid warning about unused variable */
-  // Return a block from the superblock.
-  return NULL;
-}
-
-/* The mm_free routine is only guaranteed to work when it is passed pointers
- * to allocated blocks that were returned by previous calls to mm_malloc. The
- * mm_free routine should add the block to the pool of unallocated blocks,
- * making the memory available to future mm_malloc calls.
- */
-void mm_free(void *ptr)
-{
-  (void)ptr; /* Avoid warning about unused variable */
-
-  // check if the block is large
-  if (1)
-  {
-    // it is, so free the superblock to the OS
-    // return;
-  }
-
-  // find the superblock that ptr is part of
-  // lock the superblock
-  // heap_i is the owner, so lock heap_i
-  // deallocate the block from the superblock
-  // u_i -= blk_size;
-  // s.u -= blk_size;
-  if (1)
-  {
-    // unlock heap_i
-    // unlock the superblock
-    // return;
-  }
-
-  // check if the superblock is now empty enought ot be punted to the glabl heap.
-  if (1)
-  {
-    // move a mostly empty superblock to the global heap
-    // u_0 += s1.u;
-    // u_i -= s1.u
-    // a_o += S;
-    // a_i -= S;
-  }
-  // unlock heap_i
-  // unlock the superblock
-}
-
-
 struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
                                       size_t size) {
   struct mem_block* result_mem_block = NULL;
@@ -159,7 +79,7 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
   while (
     current_mem_block && (
       current_mem_block->blk_size < size
-      || !GET_FREE_BIT(current_mem_block->flags)
+      || !GET_FREE_BIT(current_mem_block)
     )
   ) {
     /* All we are looking for is a free space that is larger or equal to
@@ -178,8 +98,8 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
       // create a new free mem block
       struct mem_block* new_mem_block = (struct mem_block*)
         (char*)result_mem_block + used_space;
-      SET_FREE_BIT(first_mem_block->flags);
-      CLEAR_LARGE_BIT(first_mem_block->flags);
+      SET_FREE_BIT(first_mem_block);
+      CLEAR_LARGE_BIT(first_mem_block);
       new_mem_block->blk_size = result_mem_block->blk_size - used_space;
       new_mem_block->next = result_mem_block->next;
       new_mem_block->previous = result_mem_block;
@@ -187,7 +107,7 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
     }
   } else {
     // reached the last block, with no available memory
-    if (GET_FREE_BIT(previous_mem_block->flags)){
+    if (GET_FREE_BIT(previous_mem_block)){
       result_mem_block = previous_mem_block;
       // Expand the memory
       void* result = mem_sbrk(size - result_mem_block->blk_size);
@@ -205,7 +125,7 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
         + sizeof(struct mem_block)
         + previous_mem_block->blk_size
       );
-      CLEAR_LARGE_BIT(first_mem_block->flags);
+      CLEAR_LARGE_BIT(first_mem_block);
       new_mem_block->blk_size = size;
 
       new_mem_block->next = NULL;
@@ -215,7 +135,7 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
       result_mem_block = new_mem_block;
     }
   }
-  CLEAR_FREE_BIT(result_mem_block->flags);
+  CLEAR_FREE_BIT(result_mem_block);
   pthread_mutex_unlock(&(mem_allocator->mem_lock));
   return result_mem_block;
 }
@@ -233,10 +153,9 @@ uint32_t find_total_size_need(size_t size, size_t multiplier) {
   return result;
 }
 
-
 void* allocate_large_object(uint32_t size) {
   // Allocate memory for the global heap meta structure
-  uint32_t total_size_need =  find_total_size_need(
+  uint32_t total_size_need = find_total_size_need(
     size,         
     SUPER_BLOCK_ALIGNMENT
   );
@@ -249,6 +168,7 @@ void* allocate_large_object(uint32_t size) {
   if (new_mem_block == NULL) return NULL;
   
   void* result = (void*)GET_DATA_FROM_MEM_BLOCK(new_mem_block);
+  SET_LARGE_BIT(new_mem_block);
   
   return result;
 }
@@ -298,6 +218,90 @@ struct thread_meta* allocate_thread_meta(pid_t thread_id) {
 }
 
 
+/* The mm_malloc routine returns a pointer to an allocated region of at least
+ * size bytes. The pointer must be aligned to 8 bytes, and the entire
+ * allocated region should lie within the memory region from dseg_lo to dseg_hi.
+ */
+void *mm_malloc(size_t sz)
+{
+  if (sz > LARGE_OBJECT_DATA_SIZE) {
+    // sz is large. allocate the superblock from the OS and return that.
+    return allocate_large_object(sz);
+  }
+
+  // get the hash of the current thread.
+  // now lock heap_i.
+  // scan the list of superblocks in the heap, from most full to least,
+  // checking if there is free space.
+  // check if there is no superblock that has free space.
+  if(1)
+  {
+    // if so, check the global heap for a superblock
+    if (1)
+    {
+      // allocate S bytes as a superblock.
+      // set the owner to heap i
+    }
+    else
+    {
+      // u_0 -= s.u;
+      // u_i += s.u;
+      // a_0 -= S;
+      // a_i += S;
+    }
+
+  }
+
+  // u_i += sz;
+  // s.u += sz;
+  // Done modifying the heaps, unlock heap_i.
+
+  (void)sz; /* Avoid warning about unused variable */
+  // Return a block from the superblock.
+  return NULL;
+}
+
+/* The mm_free routine is only guaranteed to work when it is passed pointers
+ * to allocated blocks that were returned by previous calls to mm_malloc. The
+ * mm_free routine should add the block to the pool of unallocated blocks,
+ * making the memory available to future mm_malloc calls.
+ */
+void mm_free(void *ptr)
+{
+  struct mem_block* mem_block = GET_MEM_BLOCK_FROM_DATA(ptr);
+
+  // check if the block is large
+  if (GET_LARGE_BIT(mem_block)) {
+    SET_FREE_BIT(mem_block);
+    return;
+  }
+
+  // find the superblock that ptr is part of
+  // lock the superblock
+  // heap_i is the owner, so lock heap_i
+  // deallocate the block from the superblock
+  // u_i -= blk_size;
+  // s.u -= blk_size;
+  if (1)
+  {
+    // unlock heap_i
+    // unlock the superblock
+    // return;
+  }
+
+  // check if the superblock is now empty enought ot be punted to the glabl heap.
+  if (1)
+  {
+    // move a mostly empty superblock to the global heap
+    // u_0 += s1.u;
+    // u_i -= s1.u
+    // a_o += S;
+    // a_i -= S;
+  }
+  // unlock heap_i
+  // unlock the superblock
+}
+
 /* Before calling mm_malloc or mm_free, the application program calls mm_init
  * to perform any necessary initializations, including the allocation of the
  * initial heap area. The return value should be -1 if there was a problem
@@ -330,8 +334,8 @@ int mm_init(void)
 
 	  struct mem_block* first_mem_block = mem_allocator->first_mem_block;
 
-    SET_FREE_BIT(first_mem_block->flags);
-    CLEAR_LARGE_BIT(first_mem_block->flags);
+    SET_FREE_BIT(first_mem_block);
+    CLEAR_LARGE_BIT(first_mem_block);
 
     first_mem_block->next = NULL;
     first_mem_block->previous = NULL;
