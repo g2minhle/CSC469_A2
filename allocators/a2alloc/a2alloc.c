@@ -61,6 +61,7 @@ struct thread_meta {
    pid_t thread_id;
    pthread_mutex_t thread_lock;
    struct thread_meta* next;
+   struct superblock* first_superblock;
 };
 
 struct superblock {
@@ -72,7 +73,7 @@ struct superblock {
 };
 
 
-struct allocator_meta*  mem_allocator;
+struct allocator_meta* mem_allocator;
 
 struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
                                       size_t size) {
@@ -88,11 +89,12 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
   ) {
     /* All we are looking for is a free space that is larger or equal to
      * the size we are looking for.
-     * we dont create about aglinment since we make sure that happend
+     * we dont care about aglinment since we make sure that happend
      */
     previous_mem_block = current_mem_block;
     current_mem_block = current_mem_block->next;
   }
+
 
   if(current_mem_block) {
     // Found a memory block to be used
@@ -115,15 +117,21 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
       result_mem_block = previous_mem_block;
       // Expand the memory
       void* result = mem_sbrk(size - result_mem_block->blk_size);
-      if (result == NULL) return NULL;
+      if (result == NULL) {
+        pthread_mutex_unlock(&(mem_allocator->mem_lock));
+        return NULL;
+      }
       // Extend the mem_block size
       result_mem_block->blk_size = size;
     } else {
       // Expand the memory
       void* result = mem_sbrk(size + sizeof(struct mem_block));
-      if (result == NULL) return NULL;
-      // Create a new free mem block
+      if (result == NULL) {
+        pthread_mutex_unlock(&(mem_allocator->mem_lock));
+        return NULL;
+      }
 
+      // Create a new free mem block
       struct mem_block* new_mem_block = (struct mem_block*)(
         (char*)previous_mem_block
         + sizeof(struct mem_block)
@@ -217,7 +225,7 @@ struct thread_meta* allocate_thread_meta(pid_t thread_id) {
     GET_DATA_FROM_MEM_BLOCK(new_mem_block);
 
   pthread_mutex_init(&result->thread_lock, NULL);
-  result->thread_id = 0;
+  result->thread_id = thread_id;
   return result;
 }
 
@@ -236,7 +244,7 @@ struct thread_meta* get_current_thread_heap() {
   result = current_thread_heap;
   if (result == NULL) {
     result = allocate_thread_meta(thread_id);
-
+    
     // lock thread heap    
     pthread_mutex_lock(&mem_allocator->heap_list_lock);
     
@@ -267,6 +275,18 @@ void unlock_heap(struct thread_meta* theap){
 
 }
 
+
+void remove_superblock_from_current_list(struct superblock* superblock) {
+
+}
+
+/*
+ * Retrun a given superblock to global heap
+ */
+void thread_release_superblock(struct superblock* superblock) { //Minh
+  
+}
+
 /* */
 struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t sz) {  // ABE
   // before letting a thread acquire a new superblock, lock the global heap
@@ -291,6 +311,39 @@ struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t
  return NULL;
 }
 
+void consolidate_mem_block(struct mem_block* mem_block) {
+    mem_block->blk_size += sizeof(struct mem_block);
+    mem_block->blk_size += mem_block->next->blk_size;
+    mem_block->next = mem_block->next->next;    
+    if (mem_block->next) {
+      mem_block->next->previous = mem_block;
+    }  
+}
+
+/*
+ * Make the mem_block available for others large objects/superpages.
+ * This also consolidate the adjacent free mem_block.
+ * Any lock must be hold before executing this since this can happen 
+ * inside or outside a superblock.
+ *
+ * Return total number of consolidation. This needed to manage the free usage
+ * of a superblock
+ */
+int free_mem_block(struct mem_block* mem_block) {  
+  SET_FREE_BIT(mem_block);
+  int consolidation_count = 0;
+  if (mem_block->next && GET_FREE_BIT(mem_block->next)) {
+    consolidate_mem_block(mem_block);
+    consolidation_count++; 
+  }
+    
+  if (mem_block->previous && GET_FREE_BIT(mem_block->previous)) {  
+    consolidate_mem_block(mem_block->previous);
+    consolidation_count++;
+  }
+  
+  return consolidation_count;
+}
 
 /* The mm_malloc routine returns a pointer to an allocated region of at least
  * size bytes. The pointer must be aligned to 8 bytes, and the entire
@@ -346,7 +399,9 @@ void mm_free(void *ptr) //ABE
 
   // check if the block is large
   if (GET_LARGE_BIT(mem_block)) {
-    SET_FREE_BIT(mem_block);
+    pthread_mutex_lock(&(mem_allocator->mem_lock));
+    free_mem_block(mem_block);
+    pthread_mutex_unlock(&(mem_allocator->mem_lock));
     return;
   }
 
@@ -374,32 +429,6 @@ void mm_free(void *ptr) //ABE
   }
   // unlock heap_i
   // unlock the superblock 
-}
-
-
-/*
- * return to global heap
- */
-struct superblock* thread_release_superblock() { //Minh
-  // lock global heap
-  // release global heap  
-  return NULL;
-}
-
-
-/* Free mem_block. If mem_block is a superblock, then the heap lock will be 
- * called before setting the memory block to free, and will hold the heap lock.
- * Before consolidating, the 
- * */
-void free_mem_block(struct mem_block* mem_block) {  //ABE 
-  CLEAR_FREE_BIT(mem_block);
-  if (mem_block->next && GET_FREE_BIT(mem_block->next)) {
-    // consolidate (current, next)
-  }
-    
-  if (mem_block->previous && GET_FREE_BIT(mem_block->previous)) {  
-    // consolidate (current, next)
-  }
 }
 
 /* Before calling mm_malloc or mm_free, the application program calls mm_init
@@ -456,6 +485,7 @@ int mm_init(void)
 
     // Init the global heap meta structure
     mem_allocator->global_heap->next = NULL;
+    mem_allocator->global_heap->first_superblock = NULL;
 
 		return 0;
 	}
