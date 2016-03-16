@@ -393,7 +393,7 @@ void *mm_malloc(size_t sz) // ABE
 
 void free_large_object(struct mem_block* large_object_mem_block) {
   pthread_mutex_lock(&(mem_allocator->mem_lock));
-  free_mem_block(mem_block);
+  free_mem_block(large_object_mem_block);
   pthread_mutex_unlock(&(mem_allocator->mem_lock));
 }
 
@@ -401,13 +401,36 @@ struct mem_block* get_mem_block_from_pointer(void *ptr) {
   uint32_t block_count = (uint32_t)(
       (
         ((char*)ptr - (char*)mem_allocator)
-        - sizeof(allocator_meta) 
+        - sizeof(struct allocator_meta) 
       )
       / SUPER_BLOCK_ALIGNMENT
   );
   return (struct mem_block*)(
-    SUPER_BLOCK_ALIGNMENT * block_count +  sizeof(allocator_meta)
+    SUPER_BLOCK_ALIGNMENT * block_count +  sizeof(struct  allocator_meta)
   );
+}
+
+/* Given a thread's heap metadata, if a thread's emptiness is below a threshold,
+ * return a locked superblock meant to be free, while holding the heap lock. If
+ * the thread is not below the emptiness threshold, return NULL while holding
+ * no locks. */
+struct superblock*  is_free_enough(struct thread_meta* theap)
+{
+  // work kind of like a test and test and set. test if it's possibly free enough,
+  // then attempt to find the first empty sb locking the superblocks as we traverse.
+  // once an empty sb has been found (and locked), lock the heap, determine if it's
+  // empty enough, and if it is, return the locked sb while holding the heap lock.
+  // determine if the heap seems empty enough.
+  // if not return immediately
+  // starting at the 
+}
+
+/* Given a superblock, evict the superblock from the thread's heap, and put it
+ * up into the global heap. Consolidation is done in this function. Assume that
+ * the sb's lock, the corressponding thread's lock and the global heap lock are
+ * held. */
+void evict_superblock_to_gheap (struct superblock* sb)
+{
 }
 
 /* The mm_free routine is only guaranteed to work when it is passed pointers
@@ -425,30 +448,28 @@ void mm_free(void *ptr) //ABE
     return;
   }
 
-  // find the superblock that ptr is part of
-  // lock the superblock
-  // heap_i is the owner, so lock heap_i
-  // deallocate the block from the superblock
-  // u_i -= blk_size;
-  // s.u -= blk_size;
-  if (1)
-  {
-    // unlock heap_i
-    // unlock the superblock
-    // return;
-  }
+  // This is a superblock. find the block that needs to be freed
+  struct superblock* sb = (struct superblock*) GET_DATA_FROM_MEM_BLOCK(mem_block);
+  struct thread_meta* theap = sb->thread_heap;
 
-  // check if the superblock is now empty enought ot be punted to the glabl heap.
-  if (1)
+  // then  lock the superblock since we'll be modifying the contents
+  lock_superblock(sb);
+  free_block(sb, ptr);
+  unlock_superblock(sb);
+
+  // Now to check if the heap's superblock free "level" is low enough to evict
+  // a superpage.  if is_free_enough return a sb, then it's also holding
+  // free_this's lock and the heap lock.
+  struct superblock* free_this = is_free_enough(theap);
+  if (free_this)
   {
-    // move a mostly empty superblock to the global heap
-    // u_0 += s1.u;
-    // u_i -= s1.u
-    // a_o += S;
-    // a_i -= S;
+    lock_global();
+    evict_superblock_to_gheap(free_this);
+    unlock_global();
+    unlock_heap(theap);
+    // don't attempt to unlock free_this as it may have been consolidated with
+    // another free memory block.
   }
-  // unlock heap_i
-  // unlock the superblock 
 }
 
 /* Before calling mm_malloc or mm_free, the application program calls mm_init
