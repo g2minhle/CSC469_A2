@@ -75,6 +75,9 @@ struct superblock {
 
 struct allocator_meta* mem_allocator;
 
+/*
+ * This is try to lock the memory down mem_allocator->mem_lock
+ */
 struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
                                       size_t size) {
   struct mem_block* result_mem_block = NULL;
@@ -104,8 +107,8 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
       // create a new free mem block
       struct mem_block* new_mem_block = (struct mem_block*)
         (char*)result_mem_block + used_space;
-      SET_FREE_BIT(first_mem_block);
-      CLEAR_LARGE_BIT(first_mem_block);
+      SET_FREE_BIT(new_mem_block);
+      CLEAR_LARGE_BIT(new_mem_block);
       new_mem_block->blk_size = result_mem_block->blk_size - used_space;
       new_mem_block->next = result_mem_block->next;
       new_mem_block->previous = result_mem_block;
@@ -121,8 +124,6 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
         pthread_mutex_unlock(&(mem_allocator->mem_lock));
         return NULL;
       }
-      // Extend the mem_block size
-      result_mem_block->blk_size = size;
     } else {
       // Expand the memory
       void* result = mem_sbrk(size + sizeof(struct mem_block));
@@ -137,7 +138,7 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
         + sizeof(struct mem_block)
         + previous_mem_block->blk_size
       );
-      CLEAR_LARGE_BIT(first_mem_block);
+
       new_mem_block->blk_size = size;
 
       new_mem_block->next = NULL;
@@ -148,6 +149,8 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
     }
   }
   CLEAR_FREE_BIT(result_mem_block);
+  CLEAR_LARGE_BIT(result_mem_block);
+  result_mem_block->blk_size = size;
   pthread_mutex_unlock(&(mem_allocator->mem_lock));
   return result_mem_block;
 }
@@ -388,20 +391,37 @@ void *mm_malloc(size_t sz) // ABE
   return blk_data;
 }
 
+void free_large_object(struct mem_block* large_object_mem_block) {
+  pthread_mutex_lock(&(mem_allocator->mem_lock));
+  free_mem_block(mem_block);
+  pthread_mutex_unlock(&(mem_allocator->mem_lock));
+}
+
+struct mem_block* get_mem_block_from_pointer(void *ptr) {
+  uint32_t block_count = (uint32_t)(
+      (
+        ((char*)ptr - (char*)mem_allocator)
+        - sizeof(allocator_meta) 
+      )
+      / SUPER_BLOCK_ALIGNMENT
+  );
+  return (struct mem_block*)(
+    SUPER_BLOCK_ALIGNMENT * block_count +  sizeof(allocator_meta)
+  );
+}
+
 /* The mm_free routine is only guaranteed to work when it is passed pointers
  * to allocated blocks that were returned by previous calls to mm_malloc. The
  * mm_free routine should add the block to the pool of unallocated blocks,
  * making the memory available to future mm_malloc calls.
  */
 void mm_free(void *ptr) //ABE 
-{
-  struct mem_block* mem_block = GET_MEM_BLOCK_FROM_DATA(ptr);
+{ 
+  struct mem_block* mem_block = get_mem_block_from_pointer(ptr);
 
   // check if the block is large
   if (GET_LARGE_BIT(mem_block)) {
-    pthread_mutex_lock(&(mem_allocator->mem_lock));
-    free_mem_block(mem_block);
-    pthread_mutex_unlock(&(mem_allocator->mem_lock));
+    free_large_object(mem_block);
     return;
   }
 
