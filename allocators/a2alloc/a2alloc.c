@@ -558,7 +558,7 @@ void reduce_thread_heap(struct thread_meta* theap) {
   }
   uint32_t total_heap_size = SUPERBLOCK_DATA_SIZE * sb_count;
 //  if (smallest_superblock->free_mem == SUPERBLOCK_DATA_SIZE - sizeof(mem_block) ) {
-  if (sb_count > K && ((double)total_free / (double)total_heap_size ) < F) {
+  if (sb_count > K && (1 - ((double)total_free / (double)total_heap_size )) < F) {
     if (smallest_superblock->next) {
       smallest_superblock->next->previous = smallest_superblock->previous;
     }
