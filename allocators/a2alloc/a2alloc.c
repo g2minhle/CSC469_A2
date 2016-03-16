@@ -75,6 +75,16 @@ struct superblock {
 
 struct allocator_meta* mem_allocator;
 
+/* ABE: fns to avoid compilation errors. these are the lock and unlock fns */
+
+void lock_superblock(struct superblock* sb){ }
+void unlock_superblock(struct superblock* sb){}
+void unlock_heap(struct thread_meta* theap){ }
+void lock_global(){ }
+void unlock_global(){ }
+
+/* ABE: end of fns to avoid compilation errors */
+
 /*
  * This is try to lock the memory down mem_allocator->mem_lock
  */
@@ -271,11 +281,6 @@ struct superblock* find_free_superblock(struct thread_meta* theap, uint32_t sz){
   return NULL;
 }
 
-/* Unlock the theap's heap lock */
-void unlock_heap(struct thread_meta* theap){
-
-}
-
 void remove_superblock_from_current_list(struct superblock* superblock) {
 
 }
@@ -354,7 +359,8 @@ int free_mem_block(struct mem_block* mem_block) {
  * the data of the block if the allocation worked. Otherwise return NULL. Does
  * not release the superblock lock. */
 void* allocate_block(struct superblock* sb, uint32_t sz){
-
+  
+  return NULL;
 }
 
 /* The mm_malloc routine returns a pointer to an allocated region of at least
@@ -425,7 +431,7 @@ struct superblock*  is_free_enough(struct thread_meta* theap)
   // empty enough, and if it is, return the locked sb while holding the heap lock.
   // determine if the heap seems empty enough.
   // if not return immediately
-  // starting at the 
+  return NULL;
 }
 
 /* Given a superblock, evict the superblock from the thread's heap, and put it
@@ -434,6 +440,10 @@ struct superblock*  is_free_enough(struct thread_meta* theap)
  * held. */
 void evict_superblock_to_gheap (struct superblock* sb)
 {
+}
+
+/* Free a used block from a locked superblock. */
+void free_block(struct superblock* sb, void *data){
 }
 
 /* The mm_free routine is only guaranteed to work when it is passed pointers
