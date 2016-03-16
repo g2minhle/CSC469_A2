@@ -260,24 +260,21 @@ struct thread_meta* get_current_thread_heap() {
 }
 
 
-/* Return  superblock from somewhere on theap, where there is a free block of at
- * least sz. This function requires you to have locked the theap before calling.*/
+/* Attempt to find a superblock with within the specified heap, which has an
+ * unused block that is of at least size sz. If it finds a superblock meeting
+ * the requirements, it will return the locked superblock, while also locking
+ * the heap. if it doesn't find a corresponding superblock, it will return NULL
+ * while holding the heap lock. */
 struct superblock* find_free_superblock(struct thread_meta* theap, uint32_t sz){
   // scan the list of superblocks in the heap, from most full to least,
   // checking if there is free space.
   return NULL;
 }
 
-/* Acquire theap's heap lock. only return once the heap lock is grabbed. */
-void lock_heap(struct thread_meta* theap){
-
-}
-
 /* Unlock the theap's heap lock */
 void unlock_heap(struct thread_meta* theap){
 
 }
-
 
 void remove_superblock_from_current_list(struct superblock* superblock) {
 
@@ -290,7 +287,12 @@ void thread_release_superblock(struct superblock* superblock) { //Minh
   
 }
 
-/* */
+/* Attempt to acquire a new superblock for the requesting heap, which should be
+ * locked, where the block is set to at least size sz. If it can acquire a
+ * superblock from the global heap (it may need to request more memory for the
+ * global heap from global memory), the locked superblock is returned, and the
+ * corresponding heap lock is held. Otherwise NULL is returned, and the heap
+ * lock is still held. */
 struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t sz) {  // ABE
   // before letting a thread acquire a new superblock, lock the global heap
   // as we'll try to get a superblock from the global heap
@@ -348,6 +350,13 @@ int free_mem_block(struct mem_block* mem_block) {
   return consolidation_count;
 }
 
+/* Allocate a free  block from within a locked superblock. Return a pointer to
+ * the data of the block if the allocation worked. Otherwise return NULL. Does
+ * not release the superblock lock. */
+void* allocate_block(struct superblock* sb, uint32_t sz){
+
+}
+
 /* The mm_malloc routine returns a pointer to an allocated region of at least
  * size bytes. The pointer must be aligned to 8 bytes, and the entire
  * allocated region should lie within the memory region from dseg_lo to dseg_hi.
@@ -361,33 +370,27 @@ void *mm_malloc(size_t sz) // ABE
   }
   // else, we're using a superblock.
 
-  // ABE: ? // separate thread metadata and make it a single block as well to sure we can hold the thread lock
-  // ABE: where do we grab the suberblock lock?
-
   struct thread_meta* curr_theap = get_current_thread_heap();
-  lock_heap(curr_theap);
 
-  // try an get a superblock which has a free space that it large enough to store
-  // the wanted data size.
+  // if find_free_superblock succeeds, it will be holding the the free_sb lock
+  // and the heap's lock.
   struct superblock* free_sb = find_free_superblock(curr_theap, sz);
   if (free_sb == NULL){
       free_sb = thread_acquire_superblock(curr_theap, sz);
+      unlock_heap(curr_theap);
       if (free_sb == NULL)
       {
         // we have an issue: a new superblock could not be acquired from neither
         // the global heap, nor from global memory.
-        //release used locks before returning.
-        unlock_heap(curr_theap);
         return NULL;
       }
   }
 
   // We now have a ptr to a superblock with a free block that we can use.
-  void* blk_data = NULL;
-  //void* blk_data =  acquire_block(free_sb, sz);
+  void* blk_data =  allocate_block(free_sb, sz);
 
   // release used locks before returning
-  unlock_heap(curr_theap);
+  unlock_superblock(free_sb);
   return blk_data;
 }
 
