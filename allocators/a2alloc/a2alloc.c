@@ -27,11 +27,11 @@
 
 #define GET_FREE_BIT(var) (var->flags & IS_FREE_MASK)
 #define SET_FREE_BIT(var) (var->flags |= IS_FREE_MASK)
-#define CLEAR_FREE_BIT(var) (var->flags &= !IS_FREE_MASK)
+#define CLEAR_FREE_BIT(var) (var->flags &= ~IS_FREE_MASK)
 
 #define GET_LARGE_BIT(var) (var->flags & IS_LARGE_MASK)
 #define SET_LARGE_BIT(var) (var->flags |= IS_LARGE_MASK)
-#define CLEAR_LARGE_BIT(var) (var->flags &= !IS_LARGE_MASK)
+#define CLEAR_LARGE_BIT(var) (var->flags &= ~IS_LARGE_MASK)
 
 #define GET_DATA_FROM_MEM_BLOCK(var) ((char*)var + sizeof(struct mem_block))
 #define GET_MEM_BLOCK_FROM_DATA(var) ((struct mem_block*)(char*)var - sizeof(struct mem_block))
@@ -113,10 +113,11 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
     // Found a memory block to be used
     result_mem_block = current_mem_block;
     if(size != result_mem_block->blk_size) {
-      uint32_t used_space = size - sizeof(struct mem_block);
+      uint32_t used_space = size + sizeof(struct mem_block);
       // create a new free mem block
-      struct mem_block* new_mem_block = (struct mem_block*)
-        (char*)result_mem_block + used_space;
+      struct mem_block* new_mem_block = (struct mem_block*)(
+        (char*)result_mem_block + used_space
+      );
       SET_FREE_BIT(new_mem_block);
       CLEAR_LARGE_BIT(new_mem_block);
       new_mem_block->blk_size = result_mem_block->blk_size - used_space;
@@ -415,7 +416,9 @@ struct mem_block* get_mem_block_from_pointer(void *ptr) {
       / SUPER_BLOCK_ALIGNMENT
   );
   return (struct mem_block*)(
-    SUPER_BLOCK_ALIGNMENT * block_count +  sizeof(struct  allocator_meta)
+    (char*) mem_allocator
+    + sizeof(struct  allocator_meta)
+    + SUPER_BLOCK_ALIGNMENT * block_count 
   );
 }
 
@@ -492,15 +495,15 @@ void mm_free(void *ptr) //ABE
  */
 int mm_init(void)
 {
-	if (dseg_lo == NULL && dseg_hi == NULL) {
-  	// mem_init ret: -1 if there was a problem, 0 otherwise
-	  if (mem_init() == -1 ) return -1;
+  if (dseg_lo == NULL && dseg_hi == NULL) {
+    // mem_init ret: -1 if there was a problem, 0 otherwise
+    if (mem_init() == -1 ) return -1;
 
-	  /*
-	   * Consider allocate around 5 to 10 superblock in the begining
-	   * because the bencmarker will go multithread right away.
-	   * need space for you preserved data as well
-	   */
+    /*
+     * Consider allocate around 5 to 10 superblock in the begining
+     * because the bencmarker will go multithread right away.
+     * need space for you preserved data as well
+     */
     void* result = mem_sbrk (
       sizeof(struct allocator_meta)
       + SUPER_BLOCK_ALIGNMENT * 10
@@ -508,8 +511,8 @@ int mm_init(void)
 
     if (result == NULL) return -1;
 
-	  mem_allocator = (struct allocator_meta*)dseg_lo;
-	  mem_allocator->heap_list = NULL;
+    mem_allocator = (struct allocator_meta*)dseg_lo;
+    mem_allocator->heap_list = NULL;
     pthread_mutex_init(&mem_allocator->mem_lock, NULL);
     pthread_mutex_init(&mem_allocator->heap_list_lock, NULL);
 
@@ -517,7 +520,7 @@ int mm_init(void)
 	    (char*)mem_allocator + sizeof(struct allocator_meta)
     );
 
-	  struct mem_block* first_mem_block = mem_allocator->first_mem_block;
+    struct mem_block* first_mem_block = mem_allocator->first_mem_block;
 
     SET_FREE_BIT(first_mem_block);
     CLEAR_LARGE_BIT(first_mem_block);
@@ -541,9 +544,9 @@ int mm_init(void)
     mem_allocator->global_heap->next = NULL;
     mem_allocator->global_heap->first_superblock = NULL;
 
-		return 0;
-	}
-	// It's already been initialized
+    return 0;
+  }
+  // It's already been initialized
   return 0;
 }
 
