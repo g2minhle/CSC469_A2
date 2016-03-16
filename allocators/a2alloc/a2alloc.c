@@ -18,6 +18,9 @@
 #define SUPERBLOCK_SIZE (sizeof(struct superblock) + SUPERBLOCK_DATA_SIZE) 
 #define SUPER_BLOCK_ALIGNMENT (sizeof(struct mem_block) + SUPERBLOCK_SIZE)
 
+#define K 1
+#define F 0.1
+
 // ======================= Flags =======================
 
 #define IS_FREE_MASK 0x1
@@ -432,12 +435,12 @@ int free_mem_block(struct mem_block* mem_block) {
  * the data of the block if the allocation worked. Otherwise return NULL. Does
  * not release the superblock lock. */
 void* allocate_block(struct superblock* free_sb, struct mem_block* free_mblk, uint32_t sz){
-  //LOCK(free_sb->sb_lock);
+  LOCK(free_sb->sb_lock);
   bool need_new_mem_block = use_mem_block_for_allocation(free_mblk, sz);
   free_sb->free_mem -= sz;
   if (need_new_mem_block) free_sb->free_mem -= sizeof(struct mem_block);
   return GET_DATA_FROM_MEM_BLOCK(free_mblk);
-  //UNLOCK(free_sb->sb_lock);
+  UNLOCK(free_sb->sb_lock);
 }
 
 /* The mm_malloc routine returns a pointer to an allocated region of at least
@@ -530,6 +533,53 @@ void evict_superblock_to_gheap (struct superblock* sb)
 
 /* Free a used block from a locked superblock. */
 void free_block(struct superblock* sb, void *data){
+  LOCK(sb->sb_lock);  
+  struct mem_block* mem_block = GET_MEM_BLOCK_FROM_DATA(data);
+  sb->free_mem -= mem_block->blk_size;
+  int consolidation_count = free_mem_block(mem_block);
+  sb->free_mem -= consolidation_count * sizeof(struct mem_block);  
+  UNLOCK(sb->sb_lock);
+}
+
+void reduce_thread_heap(struct thread_meta* theap) {
+  LOCK(theap->thread_lock);
+  uint32_t sb_count = 0;
+  uint32_t total_free = 0;
+  struct superblock* smallest_superblock = NULL;
+  struct superblock* current_sb = theap->first_superblock;
+  while(current_sb) {
+    if (!smallest_superblock
+        || current_sb->free_mem > smallest_superblock->free_mem){    
+      smallest_superblock = current_sb;
+    }
+    sb_count++;
+    total_free += current_sb->free_mem;
+    current_sb =  current_sb->next;
+  }
+  uint32_t total_heap_size = SUPERBLOCK_DATA_SIZE * sb_count;
+//  if (smallest_superblock->free_mem == SUPERBLOCK_DATA_SIZE - sizeof(mem_block) ) {
+  if (sb_count > K && ((double)total_free / (double)total_heap_size ) < F) {
+    if (smallest_superblock->next) {
+      smallest_superblock->next->previous = smallest_superblock->previous;
+    }
+    if (smallest_superblock->previous) {
+      smallest_superblock->previous->next = smallest_superblock->next;
+    }
+
+    LOCK(mem_allocator->global_heap->thread_lock);
+    smallest_superblock->previous = NULL;
+    smallest_superblock->next = mem_allocator->global_heap->first_superblock;
+
+    if (mem_allocator->global_heap->first_superblock) {
+      mem_allocator->global_heap->first_superblock->previous = smallest_superblock;
+    }
+    
+    mem_allocator->global_heap->first_superblock = smallest_superblock;
+    
+    UNLOCK(mem_allocator->global_heap->thread_lock);
+
+  }
+  UNLOCK(theap->thread_lock);
 }
 
 /* The mm_free routine is only guaranteed to work when it is passed pointers
@@ -548,27 +598,16 @@ void mm_free(void *ptr) //ABE
   }
 
   // This is a superblock. find the block that needs to be freed
-  struct superblock* sb = (struct superblock*) GET_DATA_FROM_MEM_BLOCK(mem_block);
-  struct thread_meta* theap = sb->thread_heap;
+  struct superblock* sb = (struct superblock*) GET_DATA_FROM_MEM_BLOCK(mem_block);  
+  struct thread_meta* theap = sb->thread_heap;  
 
   // then  lock the superblock since we'll be modifying the contents
-  lock_superblock(sb);
+  
   free_block(sb, ptr);
-  unlock_superblock(sb);
 
-  // Now to check if the heap's superblock free "level" is low enough to evict
-  // a superpage.  if is_free_enough return a sb, then it's also holding
-  // free_this's lock and the heap lock.
-  struct superblock* free_this = is_free_enough(theap);
-  if (free_this)
-  {
-    lock_global();
-    evict_superblock_to_gheap(free_this);
-    unlock_global();
-    unlock_heap(theap);
-    // don't attempt to unlock free_this as it may have been consolidated with
-    // another free memory block.
-  }
+  // if this is global heap
+  if (theap->thread_id == 0)  return;
+  reduce_thread_heap(theap);
 }
 
 /* Before calling mm_malloc or mm_free, the application program calls mm_init
