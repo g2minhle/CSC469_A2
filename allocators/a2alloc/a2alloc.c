@@ -83,24 +83,24 @@ struct superblock {
 struct allocator_meta* mem_allocator;
 
 
+/* Given a mem_block to start iterating on, first_mem_block, keep iterating until
+ * a free mem_block with size available memory is found. Keep track of the
+ * mem_block before the free mem_block in previous_mem_block */
 void find_free_mem_block(struct mem_block* first_mem_block,
-                                      struct mem_block** free_mem_block,
-                                      struct mem_block** previous_mem_block,
-                                      size_t size) {
+    struct mem_block** free_mem_block,
+    struct mem_block** previous_mem_block,
+    size_t size) {
   struct mem_block* current_mem_block = first_mem_block;
-  while (
-    current_mem_block && (
-      current_mem_block->blk_size < size
-      || !GET_FREE_BIT(current_mem_block)
-    )
-  ) {
+
+  while (current_mem_block && ( current_mem_block->blk_size < size || !GET_FREE_BIT(current_mem_block))) {
     /* All we are looking for is a free space that is larger or equal to
-     * the size we are looking for.
-     * we dont care about aglinment since we make sure that happend
+     * the size we are looking for. we dont care about alignment, since we will
+     * handle such issues later as they arise.
      */
     *previous_mem_block = current_mem_block;
     current_mem_block = current_mem_block->next;
   }
+
   *free_mem_block = current_mem_block;
 }
 
