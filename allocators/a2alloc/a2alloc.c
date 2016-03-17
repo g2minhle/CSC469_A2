@@ -267,13 +267,20 @@ struct thread_meta* allocate_thread_meta(pid_t thread_id) {
 }
 
 
-struct thread_meta* get_current_thread_heap() {
+/* Return the currently running thread's heap metadata if it was found in the
+ * list of thread metadata. If it was not found in the list, allocate, fill out
+ * and add the current thread's heap's metadata to the start of the allocator's
+ * thread metadata list. then return the newly added thread metadata. */
+struct thread_meta* add_and_find_curr_thread_meta() {
   pid_t thread_id = getTID();
   struct thread_meta* result;
-  // This lock make sure what current_thread_heap get is not an illed state pointer
+
+  // NB: this lock could possibly be removed.
   LOCK(mem_allocator->heap_list_lock);
   struct thread_meta* current_thread_heap = mem_allocator->heap_list;
   UNLOCK(mem_allocator->heap_list_lock);
+
+  // Try to find the current thread's heap's metadata in the linked list
   while(current_thread_heap && current_thread_heap->thread_id != thread_id) {
     current_thread_heap = current_thread_heap->next;
   }
@@ -282,7 +289,7 @@ struct thread_meta* get_current_thread_heap() {
   if (result == NULL) {
     result = allocate_thread_meta(thread_id);
 
-    // lock thread heap
+    // lock the list of thread metadata so that we can add new metadata.
     LOCK(mem_allocator->heap_list_lock);
 
     result->next = mem_allocator->heap_list;
@@ -444,7 +451,7 @@ void *mm_malloc(size_t sz) // ABE
   }
 
   // else, we're using a superblock.
-  struct thread_meta* curr_theap = get_current_thread_heap();
+  struct thread_meta* curr_theap = add_and_find_curr_thread_meta();
   LOCK(curr_theap->thread_lock);
 
   // if find_free_superblock succeeds, it will be holding the the free_sb lock
