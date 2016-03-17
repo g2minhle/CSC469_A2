@@ -196,24 +196,17 @@ uint32_t find_total_size_need(size_t size, size_t multiplier) {
   return result;
 }
 
+/* Allocate at least size amount of memory for a large object on the global heap.
+ * Return a pointer to the start of the data/usuable memory in the large object.
+ */
 void* allocate_large_object(uint32_t size) {
   // Allocate memory for the global heap meta structure
-  uint32_t total_size_need = find_total_size_need(
-    size,
-    SUPER_BLOCK_ALIGNMENT
-  );
+  uint32_t total_size_need = find_total_size_need(size, SUPER_BLOCK_ALIGNMENT);
 
-  struct mem_block* new_mem_block = allocate_mem_block(
-        mem_allocator->first_mem_block,
-        total_size_need
-  );
-
+  struct mem_block* new_mem_block = allocate_mem_block(mem_allocator->first_mem_block, total_size_need);
   if (new_mem_block == NULL) return NULL;
-
-  void* result = (void*)GET_DATA_FROM_MEM_BLOCK(new_mem_block);
   SET_LARGE_BIT(new_mem_block);
-
-  return result;
+  return (void*)GET_DATA_FROM_MEM_BLOCK(new_mem_block);
 }
 
 struct superblock* allocate_superblock() {
