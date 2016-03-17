@@ -301,13 +301,13 @@ struct thread_meta* add_and_find_curr_thread_meta() {
 }
 
 
-/* Attempt to find a superblock with within the specified heap, which has an
+/* Attempt to find a superblock with within the specified local heap, which has an
  * unused block that is of at least size sz. If it finds a superblock meeting
  * the requirements, it will return the locked superblock, while also locking
  * the heap. if it doesn't find a corresponding superblock, it will return NULL
  * while holding the heap lock. */
-struct superblock*  find_free_superblock(struct thread_meta* theap,
-                                          struct mem_block** final_free_mem_block,
+struct superblock*  find_usuable_superblock_on_lheap(struct thread_meta* theap,
+                                          struct mem_block** final_free_mem_block, 
                                           size_t sz){
   // scan the list of superblocks in the heap, from most full to least,
   // checking if there is free space.
@@ -316,9 +316,7 @@ struct superblock*  find_free_superblock(struct thread_meta* theap,
   struct superblock* final_sb = NULL;
   struct superblock* current_sb = theap->first_superblock;
   while(current_sb) {
-    struct mem_block* sb_first_mem_block = (struct mem_block*)(
-      (char*)current_sb + sizeof(struct superblock)
-    );
+    struct mem_block* sb_first_mem_block = (struct mem_block*)((char*)current_sb + sizeof(struct superblock));
     if (!final_sb
         || current_sb->free_mem < final_sb->free_mem){
       find_free_mem_block(sb_first_mem_block, &free_mem_block, &previous_mem_block, sz);
@@ -454,10 +452,10 @@ void *mm_malloc(size_t sz) // ABE
   struct thread_meta* curr_theap = add_and_find_curr_thread_meta();
   LOCK(curr_theap->thread_lock);
 
-  // if find_free_superblock succeeds, it will be holding the the free_sb lock
+  // if find_usuable_superblock_on_lheap succeeds, it will be holding the the free_sb lock
   // and the heap's lock.
   struct mem_block* free_mb = NULL;
-  struct superblock* free_sb = find_free_superblock(curr_theap, &free_mb, sz);
+  struct superblock* free_sb = find_usuable_superblock_on_lheap(curr_theap, &free_mb, sz);
 
   if (free_sb == NULL){
       free_sb = thread_acquire_superblock(curr_theap, sz);
