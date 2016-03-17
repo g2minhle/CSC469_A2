@@ -19,8 +19,8 @@
 #define SUPERBLOCK_SIZE (sizeof(struct superblock) + SUPERBLOCK_DATA_SIZE) 
 #define SUPER_BLOCK_ALIGNMENT (sizeof(struct mem_block) + SUPERBLOCK_SIZE)
 
-#define K 1
-#define F 0.1
+#define K 0
+#define F 0.2
 
 // ======================= Flags =======================
 
@@ -38,7 +38,7 @@
 #define CLEAR_LARGE_BIT(var) (var->flags &= ~IS_LARGE_MASK)
 
 #define GET_DATA_FROM_MEM_BLOCK(var) ((char*)var + sizeof(struct mem_block))
-#define GET_MEM_BLOCK_FROM_DATA(var) ((struct mem_block*)(char*)var - sizeof(struct mem_block))
+#define GET_MEM_BLOCK_FROM_DATA(var) ((struct mem_block*)((char*)var - sizeof(struct mem_block)))
 
 #define LOCK(var) pthread_mutex_lock(&(var))
 #define UNLOCK(var) pthread_mutex_unlock(&(var))
@@ -127,6 +127,7 @@ bool use_mem_block_for_allocation(struct mem_block* result_mem_block, size_t siz
     new_mem_block->next = result_mem_block->next;
     new_mem_block->previous = result_mem_block;
     result_mem_block->next = new_mem_block;
+    result_mem_block->blk_size = size;
     return TRUE;
   }
   return FALSE;
@@ -298,7 +299,7 @@ struct thread_meta* get_current_thread_heap() {
     LOCK(mem_allocator->heap_list_lock);
     
     result->next = mem_allocator->heap_list;
-    mem_allocator->heap_list = result->next;
+    mem_allocator->heap_list = result;
     
     UNLOCK(mem_allocator->heap_list_lock);
   }
@@ -536,9 +537,9 @@ void evict_superblock_to_gheap (struct superblock* sb)
 void free_block(struct superblock* sb, void *data){
   LOCK(sb->sb_lock);  
   struct mem_block* mem_block = GET_MEM_BLOCK_FROM_DATA(data);
-  sb->free_mem -= mem_block->blk_size;
+  sb->free_mem += mem_block->blk_size;
   int consolidation_count = free_mem_block(mem_block);
-  sb->free_mem -= consolidation_count * sizeof(struct mem_block);  
+  sb->free_mem += consolidation_count * sizeof(struct mem_block);  
   UNLOCK(sb->sb_lock);
 }
 
@@ -557,19 +558,26 @@ void reduce_thread_heap(struct thread_meta* theap) {
     total_free += current_sb->free_mem;
     current_sb =  current_sb->next;
   }
-  uint32_t total_heap_size = SUPERBLOCK_DATA_SIZE * sb_count;
+  uint32_t total_heap_size = SUPERBLOCK_DATA_SIZE * sb_count - sizeof(struct mem_block);
 //  if (smallest_superblock->free_mem == SUPERBLOCK_DATA_SIZE - sizeof(mem_block) ) {
   if (sb_count > K && (1 - ((double)total_free / (double)total_heap_size )) < F) {
+    if (smallest_superblock == theap->first_superblock) {
+      theap->first_superblock = smallest_superblock->next;
+    }
+  
     if (smallest_superblock->next) {
       smallest_superblock->next->previous = smallest_superblock->previous;
     }
     if (smallest_superblock->previous) {
       smallest_superblock->previous->next = smallest_superblock->next;
     }
+    
+
 
     LOCK(mem_allocator->global_heap->thread_lock);
     smallest_superblock->previous = NULL;
     smallest_superblock->next = mem_allocator->global_heap->first_superblock;
+    smallest_superblock->thread_heap = mem_allocator->global_heap;
 
     if (mem_allocator->global_heap->first_superblock) {
       mem_allocator->global_heap->first_superblock->previous = smallest_superblock;
