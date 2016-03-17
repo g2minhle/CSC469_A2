@@ -14,7 +14,8 @@
 #define LARGE_OBJECT_DATA_SIZE (SUPERBLOCK_DATA_SIZE / 2)
 // Superblock size in bytes
 // TODO: find out the sb_size
-#define SUPERBLOCK_DATA_SIZE 8
+// sizeof(memblock) + 88
+#define SUPERBLOCK_DATA_SIZE 112 
 #define SUPERBLOCK_SIZE (sizeof(struct superblock) + SUPERBLOCK_DATA_SIZE) 
 #define SUPER_BLOCK_ALIGNMENT (sizeof(struct mem_block) + SUPERBLOCK_SIZE)
 
@@ -439,8 +440,8 @@ void* allocate_block(struct superblock* free_sb, struct mem_block* free_mblk, ui
   bool need_new_mem_block = use_mem_block_for_allocation(free_mblk, sz);
   free_sb->free_mem -= sz;
   if (need_new_mem_block) free_sb->free_mem -= sizeof(struct mem_block);
-  return GET_DATA_FROM_MEM_BLOCK(free_mblk);
   UNLOCK(free_sb->sb_lock);
+  return GET_DATA_FROM_MEM_BLOCK(free_mblk);
 }
 
 /* The mm_malloc routine returns a pointer to an allocated region of at least
@@ -602,7 +603,6 @@ void mm_free(void *ptr) //ABE
   struct thread_meta* theap = sb->thread_heap;  
 
   // then  lock the superblock since we'll be modifying the contents
-  
   free_block(sb, ptr);
 
   // if this is global heap
