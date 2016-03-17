@@ -361,28 +361,14 @@ struct superblock* acquire_superblock_from_global() {
  * global heap from global memory), the locked superblock is returned, and the
  * corresponding heap lock is held. Otherwise NULL is returned, and the heap
  * lock is still held. */
-struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t sz) {  // ABE
-  // before letting a thread acquire a new superblock, lock the global heap
-  // as we'll try to get a superblock from the global heap
-      // u_0 -= s.u;
-      // u_i += s.u;
-      // a_0 -= S;
-      // a_i += S;
-
-  // acquire_global_lock();
-  // now that we have the lock, check if the global heap has any free superblocks
-  // if they do, take one of the free superblocks. if not, request more memory.
-  //struct mem_block* mblk =  allocate_superblock();
-  // release the global heap
-  //lock thread heap
-    //release
-    //return superblock;
-
-
+struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t sz) {
   struct superblock* new_sb = acquire_superblock_from_global();
   if (new_sb == NULL) {
     new_sb = allocate_superblock();
+    if (new_sb == NULL) return NULL; /* we tried, fail here */
   }
+
+  // otherwise we acquired a superblock, now we just need to set up the metadata.
   new_sb->previous = NULL;
   new_sb->thread_heap = theap;
   new_sb->next = theap->first_superblock;
