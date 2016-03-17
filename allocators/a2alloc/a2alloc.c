@@ -82,13 +82,6 @@ struct superblock {
 
 struct allocator_meta* mem_allocator;
 
-/* ABE: fns to avoid compilation errors. these are the lock and unlock fns */
-
-void lock_superblock(struct superblock* sb){ }
-void unlock_superblock(struct superblock* sb){}
-void unlock_heap(struct thread_meta* theap){ }
-void lock_global(){ }
-void unlock_global(){ }
 
 void find_free_mem_block(struct mem_block* first_mem_block,
                                       struct mem_block** free_mem_block,
