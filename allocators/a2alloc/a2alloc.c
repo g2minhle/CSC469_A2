@@ -303,33 +303,42 @@ struct superblock*  find_usable_superblock_on_lheap(struct thread_meta* theap,
   struct mem_block* previous_mem_block;
   struct superblock* final_sb = NULL;
   struct superblock* current_sb = theap->first_superblock;
+
   while(current_sb) {
     struct mem_block* sb_first_mem_block = (struct mem_block*)((char*)current_sb + sizeof(struct superblock));
-    if (!final_sb
-        || current_sb->free_mem < final_sb->free_mem){
+
+    if (!final_sb || current_sb->free_mem < final_sb->free_mem){
       find_free_mem_block(sb_first_mem_block, &free_mem_block, &previous_mem_block, sz);
+
       if(free_mem_block) {
         *final_free_mem_block = free_mem_block;
         final_sb = current_sb;
       }
     }
+
     current_sb =  current_sb->next;
   }
+
   return final_sb;
 }
 
 
 struct superblock* acquire_superblock_from_global() {
   struct superblock* new_sb;
+
   LOCK(mem_allocator->global_heap->thread_lock);
+
   new_sb = mem_allocator->global_heap->first_superblock;
   if (new_sb){
     mem_allocator->global_heap->first_superblock = new_sb->next;
+
     if (mem_allocator->global_heap->first_superblock) {
       mem_allocator->global_heap->first_superblock->previous = NULL;
     }
   }
+
   UNLOCK(mem_allocator->global_heap->thread_lock);
+
   return new_sb;
 }
 
