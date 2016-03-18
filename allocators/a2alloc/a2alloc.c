@@ -216,20 +216,14 @@ struct superblock* allocate_superblock() {
   // Allocate memory for the global heap meta structure
   uint32_t total_size_need =  find_total_size_needed(SUPERBLOCK_SIZE, SUPER_BLOCK_ALIGNMENT);
 
-  struct mem_block* new_mem_block = allocate_mem_block(
-        mem_allocator->first_mem_block,
-        total_size_need
-  );
+  struct mem_block* new_mem_block = allocate_mem_block(mem_allocator->first_mem_block, total_size_need);
 
   if (new_mem_block == NULL) return NULL;
 
-  struct superblock* result = (struct superblock*)
-    GET_DATA_FROM_MEM_BLOCK(new_mem_block);
+  struct superblock* result = (struct superblock*) GET_DATA_FROM_MEM_BLOCK(new_mem_block);
   result->free_mem = SUPERBLOCK_DATA_SIZE - sizeof(struct mem_block);
 
-  struct mem_block* mem_block = (struct mem_block*)(
-    (char*) result + sizeof(struct superblock)
-  );
+  struct mem_block* mem_block = (struct mem_block*)((char*) result + sizeof(struct superblock));
 
   mem_block->blk_size = result->free_mem;
 
