@@ -364,7 +364,7 @@ struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t
   return new_sb;
 }
 
-/* try to consodiate the provided (free) memeory blcok with the next memory block
+/* try to consolidate the provided (free) memory block with the next memory block
  * which is also free. (Checks that the memory blocks are free should be done
  * before calling this function) */
 void consolidate_mem_block(struct mem_block* mem_block) {
@@ -383,11 +383,12 @@ void consolidate_mem_block(struct mem_block* mem_block) {
  * Any lock must be hold before executing this since this can happen
  * inside or outside a superblock.
  *
- * Return total number of consolidation that occured. This needed to manage
+ * Return total number of consolidation that occurred. This needed to manage
  * the free usage of a superblock <- ABE:??
  */
 int free_mem_block(struct mem_block* mem_block) {
   SET_FREE_BIT(mem_block);
+
   int consolidation_count = 0; /* keep track of how many consolidations occur */
 
   // consolidate with the next/following memory block
