@@ -422,7 +422,7 @@ void* allocate_block(struct superblock* free_sb, struct mem_block* free_mblk, ui
 void *mm_malloc(size_t sz) // ABE
 {
   if (sz > LARGE_OBJECT_DATA_SIZE) {
-    // the size ther are trying to allocate is too large to store in a superblock,
+    // the size they are trying to allocate is too large to store in a superblock,
     // so allocate a large object
     return allocate_large_object(sz);
   }
@@ -445,17 +445,17 @@ void *mm_malloc(size_t sz) // ABE
         UNLOCK(curr_theap->thread_lock);
         return NULL;
       }
-      struct mem_block* sb_first_mem_block = (struct mem_block*)(
-        (char*) free_sb + sizeof(struct superblock)
-      );
+      struct mem_block* sb_first_mem_block = (struct mem_block*)((char*) free_sb + sizeof(struct superblock));
       struct mem_block* previous_mem_block = NULL;
       find_free_mem_block(sb_first_mem_block, &free_mb, &previous_mem_block, sz);
   }
+
   // We now have a ptr to a superblock with a free block that we can use.
   void* blk_data =  allocate_block(free_sb, free_mb, sz);
 
   // release used locks before returning
   UNLOCK(curr_theap->thread_lock);
+
   return blk_data;
 }
 
