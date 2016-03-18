@@ -311,19 +311,25 @@ struct superblock*  find_usable_superblock_on_lheap(struct thread_meta* theap,
   struct mem_block* previous_mem_block;
   struct superblock* final_sb = NULL;
   struct superblock* current_sb = theap->first_superblock;
-
+  bool unlock;
   while(current_sb) {
+    unlock = TRUE;
+    LOCK(current_sb->sb_lock);
     struct mem_block* sb_first_mem_block = (struct mem_block*)((char*)current_sb + sizeof(struct superblock));
 
     if (!final_sb || current_sb->free_mem < final_sb->free_mem){
       find_free_mem_block(sb_first_mem_block, &free_mem_block, &previous_mem_block, sz);
 
       if(free_mem_block) {
+        unlock = FALSE;
         *final_free_mem_block = free_mem_block;
         final_sb = current_sb;
       }
+    }    
+    if (unlock) {
+      UNLOCK(current_sb->sb_lock);
     }
-
+    
     current_sb =  current_sb->next;
   }
 
@@ -362,7 +368,8 @@ struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t
   if (new_sb == NULL) {
     new_sb = allocate_superblock();
     if (new_sb == NULL) return NULL; /* we tried, fail here */
-  }
+  }   
+  LOCK(new_sb->sb_lock);
 
   // otherwise we acquired a superblock, now we just need to set up the metadata.
   new_sb->previous = NULL;
@@ -415,19 +422,6 @@ int free_mem_block(struct mem_block* mem_block) {
   return consolidation_count;
 }
 
-/* Allocate a free  block from within a superblock. Return a pointer to
- * the data of the block if the allocation worked. Otherwise return NULL. */
-void* allocate_block(struct superblock* free_sb, struct mem_block* free_mblk, uint32_t sz){
-  LOCK(free_sb->sb_lock);
-
-  size_t mem_allocated = allocate_memory(free_mblk, sz);
-  free_sb->free_mem -= mem_allocated;
-
-  UNLOCK(free_sb->sb_lock);
-
-  return GET_DATA_FROM_MEM_BLOCK(free_mblk);
-}
-
 /* The mm_malloc routine returns a pointer to an allocated region of at least
  * size bytes. The pointer must be aligned to 8 bytes, and the entire
  * allocated region should lie within the memory region from dseg_lo to dseg_hi.
@@ -463,9 +457,11 @@ void *mm_malloc(size_t sz) // ABE
       find_free_mem_block(sb_first_mem_block, &free_mb, &previous_mem_block, sz);
   }
 
-  // We now have a ptr to a superblock with a free block that we can use.
-  void* blk_data =  allocate_block(free_sb, free_mb, sz);
-
+  size_t mem_allocated = allocate_memory(free_mb, sz);
+  free_sb->free_mem -= mem_allocated;
+  void* blk_data = GET_DATA_FROM_MEM_BLOCK(free_mb);
+  
+  UNLOCK(free_sb->sb_lock);
   // release used locks before returning
   UNLOCK(curr_theap->thread_lock);
 
@@ -484,13 +480,14 @@ void free_large_object(struct mem_block* large_object_mem_block) {
 /* Given a ptr, typically to the start of the block of data, try to find the
  * corresponding memory block metadata */
 struct mem_block* get_mem_block_from_pointer(void *ptr) {
+  uint32_t mem_allocator_size = size_alignment(sizeof(struct allocator_meta), CACHE_LINE);
   uint32_t block_count = (uint32_t)(
     (
       ( (char*)ptr - (char*)mem_allocator ) 
-      - sizeof(struct allocator_meta)
+      - mem_allocator_size
     ) / SUPER_BLOCK_ALIGNMENT
   );
-  uint32_t mem_allocator_size = size_alignment(sizeof(struct allocator_meta), CACHE_LINE);
+
   
   return (struct mem_block*)(
     (char*) mem_allocator 
