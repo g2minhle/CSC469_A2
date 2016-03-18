@@ -104,7 +104,7 @@ void find_free_mem_block(struct mem_block* first_mem_block,
   *free_mem_block = current_mem_block;
 }
 
-/*Return true iff need to allocate new mem_block */
+/* Return true iff need to allocate new mem_block  ABE: is this still the case? */
 int use_mem_block_for_allocation(struct mem_block* result_mem_block, size_t size) {
   CLEAR_FREE_BIT(result_mem_block);
   CLEAR_LARGE_BIT(result_mem_block);
@@ -127,7 +127,7 @@ int use_mem_block_for_allocation(struct mem_block* result_mem_block, size_t size
   return result_mem_block->blk_size + extra_space;
 }
 
-/*
+/* ABE:??
  * This is try to lock the memory down mem_allocator->mem_lock
  */
 struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
@@ -200,10 +200,10 @@ uint32_t find_total_size_needed(size_t size, size_t multiplier) {
 }
 
 /* Allocate at least size amount of memory for a large object on the global heap.
- * Return a pointer to the start of the data/usuable memory in the large object.
+ * Return a pointer to the start of the data/usable memory in the large object.
  */
 void* allocate_large_object(uint32_t size) {
-  // Allocate memory for the global heap meta structure
+  // Allocate memory for the global heap meta structure -- ABE??
   uint32_t total_size_need = find_total_size_needed(size, SUPER_BLOCK_ALIGNMENT);
 
   struct mem_block* new_mem_block = allocate_mem_block(mem_allocator->first_mem_block, total_size_need);
