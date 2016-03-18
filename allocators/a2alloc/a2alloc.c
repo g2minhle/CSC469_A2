@@ -488,7 +488,7 @@ void free_block(struct superblock* sb, void *data){
 }
 
 /* Check to see if we can reduce the number of superblocks from a specified
- * thread's heap. If the the heap is below a certain thresdhold, evict a
+ * thread's heap. If the heap is below a certain threshold, evict a
  * superblock from the heap to the global heap. */
 void reduce_thread_heap(struct thread_meta* theap) {
   LOCK(theap->thread_lock);
@@ -517,7 +517,7 @@ void reduce_thread_heap(struct thread_meta* theap) {
 
   uint32_t total_heap_size = SUPERBLOCK_DATA_SIZE * sb_count - sizeof(struct mem_block);
 
-  // free-ness threashold checking
+  // free-ness threshold checking
   if (sb_count > K && (1 - ((double)total_free / (double)total_heap_size )) < F) {
     // Great! Time to evict a superblock
 
@@ -537,9 +537,10 @@ void reduce_thread_heap(struct thread_meta* theap) {
       smallest_superblock->previous->next = smallest_superblock->next;
     }
 
+    LOCK(mem_allocator->global_heap->thread_lock);
+
     // Now to move this superblock to the end of the global heap's list of
     // superblocks
-    LOCK(mem_allocator->global_heap->thread_lock);
     smallest_superblock->previous = NULL;
     smallest_superblock->next = mem_allocator->global_heap->first_superblock;
     smallest_superblock->thread_heap = mem_allocator->global_heap;
