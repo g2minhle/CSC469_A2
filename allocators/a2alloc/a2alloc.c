@@ -392,17 +392,20 @@ void consolidate_mem_block(struct mem_block* mem_block) {
  * Any lock must be hold before executing this since this can happen
  * inside or outside a superblock.
  *
- * Return total number of consolidation. This needed to manage the free usage
- * of a superblock
+ * Return total number of consolidation that occured. This needed to manage
+ * the free usage of a superblock <- ABE:??
  */
 int free_mem_block(struct mem_block* mem_block) {
   SET_FREE_BIT(mem_block);
-  int consolidation_count = 0;
+  int consolidation_count = 0; /* keep track of how many consolidations occur */
+
+  // consolidate with the next/following memory block
   if (mem_block->next && GET_FREE_BIT(mem_block->next)) {
     consolidate_mem_block(mem_block);
     consolidation_count++;
   }
 
+  //consolidate with the previous memory block
   if (mem_block->previous && GET_FREE_BIT(mem_block->previous)) {
     consolidate_mem_block(mem_block->previous);
     consolidation_count++;
