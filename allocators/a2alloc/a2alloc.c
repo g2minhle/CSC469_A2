@@ -294,7 +294,7 @@ struct thread_meta* add_and_find_curr_thread_meta() {
  * the requirements, it will return the locked superblock, while also locking
  * the heap. if it doesn't find a corresponding superblock, it will return NULL
  * while holding the heap lock. */
-struct superblock*  find_usuable_superblock_on_lheap(struct thread_meta* theap,
+struct superblock*  find_usable_superblock_on_lheap(struct thread_meta* theap,
                                           struct mem_block** final_free_mem_block, 
                                           size_t sz){
   // scan the list of superblocks in the heap, from most full to least,
@@ -422,10 +422,10 @@ void *mm_malloc(size_t sz) // ABE
   struct thread_meta* curr_theap = add_and_find_curr_thread_meta();
   LOCK(curr_theap->thread_lock);
 
-  // if find_usuable_superblock_on_lheap succeeds, it will be holding the the free_sb lock
+  // if find_usable_superblock_on_lheap succeeds, it will be holding the the free_sb lock
   // and the heap's lock.
   struct mem_block* free_mb = NULL;
-  struct superblock* free_sb = find_usuable_superblock_on_lheap(curr_theap, &free_mb, sz);
+  struct superblock* free_sb = find_usable_superblock_on_lheap(curr_theap, &free_mb, sz);
 
   if (free_sb == NULL){
       free_sb = thread_acquire_superblock(curr_theap, sz);
