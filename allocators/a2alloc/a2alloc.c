@@ -517,13 +517,18 @@ void evict_superblock_to_gheap (struct superblock* sb)
 {
 }
 
-/* Free a used block from a locked superblock. */
+/* Free a used block, the data ptr, from a superblock. */
 void free_block(struct superblock* sb, void *data){
   LOCK(sb->sb_lock);
+
+  // Find the corresponding mem_block metadata for data
   struct mem_block* mem_block = GET_MEM_BLOCK_FROM_DATA(data);
   sb->free_mem += mem_block->blk_size;
+
+  // actually free the memory block
   int consolidation_count = free_mem_block(mem_block);
   sb->free_mem += consolidation_count * sizeof(struct mem_block);
+
   UNLOCK(sb->sb_lock);
 }
 
