@@ -601,58 +601,53 @@ void mm_free(void *ptr) //ABE
  */
 int mm_init(void)
 {
-  if (dseg_lo == NULL && dseg_hi == NULL) {
-    // mem_init ret: -1 if there was a problem, 0 otherwise
-    if (mem_init() == -1 ) return -1;
-
-    /*
-     * Consider allocate around 5 to 10 superblock in the begining
-     * because the bencmarker will go multithread right away.
-     * need space for you preserved data as well
-     */
-    void* result = mem_sbrk (
-      sizeof(struct allocator_meta)
-      + SUPER_BLOCK_ALIGNMENT * 10
-    );
-
-    if (result == NULL) return -1;
-
-    mem_allocator = (struct allocator_meta*)dseg_lo;
-    mem_allocator->heap_list = NULL;
-    pthread_mutex_init(&mem_allocator->mem_lock, NULL);
-    pthread_mutex_init(&mem_allocator->heap_list_lock, NULL);
-
-    mem_allocator->first_mem_block = (struct mem_block*)(
-	    (char*)mem_allocator + sizeof(struct allocator_meta)
-    );
-
-    struct mem_block* first_mem_block = mem_allocator->first_mem_block;
-
-    SET_FREE_BIT(first_mem_block);
-    CLEAR_LARGE_BIT(first_mem_block);
-
-    first_mem_block->next = NULL;
-    first_mem_block->previous = NULL;
-
-    // Total space we have
-    first_mem_block->blk_size = dseg_hi - dseg_lo + 1;
-    // Minus the preserve space
-    first_mem_block->blk_size -= sizeof (struct allocator_meta);
-    // Minus the the memblock itself
-    first_mem_block->blk_size -= sizeof (struct mem_block);
-
-
-    mem_allocator->global_heap = allocate_thread_meta(0);
-
-    if (mem_allocator->global_heap == NULL) return -1;
-
-    // Init the global heap meta structure
-    mem_allocator->global_heap->next = NULL;
-    mem_allocator->global_heap->first_superblock = NULL;
-
+  if (dseg_lo != NULL || dseg_hi != NULL) {
     return 0;
   }
-  // It's already been initialized
+  if (mem_init() == -1 ) return -1;
+
+  /*
+   * Consider allocate around 5 to 10 superblock in the begining
+   * because the bencmarker will go multithread right away.
+   * need space for you preserved data as well
+   */
+  void* result = mem_sbrk (sizeof(struct allocator_meta) + SUPER_BLOCK_ALIGNMENT * 10);
+
+  if (result == NULL) return -1;
+
+  mem_allocator = (struct allocator_meta*)dseg_lo;
+  mem_allocator->heap_list = NULL;
+  pthread_mutex_init(&mem_allocator->mem_lock, NULL);
+  pthread_mutex_init(&mem_allocator->heap_list_lock, NULL);
+
+  mem_allocator->first_mem_block = (struct mem_block*)(
+    (char*)mem_allocator + sizeof(struct allocator_meta)
+  );
+
+  struct mem_block* first_mem_block = mem_allocator->first_mem_block;
+
+  SET_FREE_BIT(first_mem_block);
+  CLEAR_LARGE_BIT(first_mem_block);
+
+  first_mem_block->next = NULL;
+  first_mem_block->previous = NULL;
+
+  // Total space we have
+  first_mem_block->blk_size = dseg_hi - dseg_lo + 1;
+  // Minus the preserve space
+  first_mem_block->blk_size -= sizeof (struct allocator_meta);
+  // Minus the the memblock itself
+  first_mem_block->blk_size -= sizeof (struct mem_block);
+
+
+  mem_allocator->global_heap = allocate_thread_meta(0);
+
+  if (mem_allocator->global_heap == NULL) return -1;
+
+  // Init the global heap meta structure
+  mem_allocator->global_heap->next = NULL;
+  mem_allocator->global_heap->first_superblock = NULL;
+
   return 0;
 }
 
