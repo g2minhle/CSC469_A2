@@ -377,10 +377,14 @@ struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t
   return new_sb;
 }
 
+/* try to consodiate the provided (free) memeory blcok with the next memory block
+ * which is also free. (Checks that the memory blocks are free should be done
+ * before calling this function) */
 void consolidate_mem_block(struct mem_block* mem_block) {
     mem_block->blk_size += sizeof(struct mem_block);
     mem_block->blk_size += mem_block->next->blk_size;
     mem_block->next = mem_block->next->next;
+
     if (mem_block->next) {
       mem_block->next->previous = mem_block;
     }
