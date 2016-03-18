@@ -242,10 +242,7 @@ struct thread_meta* allocate_thread_meta(pid_t thread_id) {
   // Allocate memory for the global heap meta structure
   uint32_t total_size_need =  find_total_size_needed(sizeof(struct thread_meta), SUPER_BLOCK_ALIGNMENT);
 
-  struct mem_block* new_mem_block = allocate_mem_block(
-        mem_allocator->first_mem_block,
-        total_size_need
-  );
+  struct mem_block* new_mem_block = allocate_mem_block(mem_allocator->first_mem_block, total_size_need);
 
   if (new_mem_block == NULL) return NULL;
 
