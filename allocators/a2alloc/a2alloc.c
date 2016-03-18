@@ -209,6 +209,7 @@ void* allocate_large_object(uint32_t size) {
   struct mem_block* new_mem_block = allocate_mem_block(mem_allocator->first_mem_block, total_size_need);
   if (new_mem_block == NULL) return NULL;
   SET_LARGE_BIT(new_mem_block);
+
   return (void*)GET_DATA_FROM_MEM_BLOCK(new_mem_block);
 }
 
@@ -350,6 +351,7 @@ struct superblock* acquire_superblock_from_global() {
  * lock is still held. */
 struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t sz) {
   struct superblock* new_sb = acquire_superblock_from_global();
+
   if (new_sb == NULL) {
     new_sb = allocate_superblock();
     if (new_sb == NULL) return NULL; /* we tried, fail here */
@@ -410,9 +412,12 @@ int free_mem_block(struct mem_block* mem_block) {
  * the data of the block if the allocation worked. Otherwise return NULL. */
 void* allocate_block(struct superblock* free_sb, struct mem_block* free_mblk, uint32_t sz){
   LOCK(free_sb->sb_lock);
+
   size_t mem_allocated = use_mem_block_for_allocation(free_mblk, sz);
   free_sb->free_mem -= mem_allocated;
+
   UNLOCK(free_sb->sb_lock);
+
   return GET_DATA_FROM_MEM_BLOCK(free_mblk);
 }
 
@@ -463,7 +468,9 @@ void *mm_malloc(size_t sz) // ABE
 /* Free a large object by freeing the mem_block metadata. */
 void free_large_object(struct mem_block* large_object_mem_block) {
   LOCK(mem_allocator->mem_lock);
+
   free_mem_block(large_object_mem_block);
+
   UNLOCK(mem_allocator->mem_lock);
 }
 
@@ -601,6 +608,7 @@ int mm_init(void)
   if (dseg_lo != NULL || dseg_hi != NULL) {
     return 0;
   }
+
   if (mem_init() == -1 ) return -1;
 
   /*
