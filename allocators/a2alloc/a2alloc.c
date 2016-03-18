@@ -465,6 +465,7 @@ void *mm_malloc(size_t sz) // ABE
   return blk_data;
 }
 
+/* Free a large object by freeing the mem_block metadata. */
 void free_large_object(struct mem_block* large_object_mem_block) {
   LOCK(mem_allocator->mem_lock);
   free_mem_block(large_object_mem_block);
