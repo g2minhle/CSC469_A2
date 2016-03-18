@@ -597,8 +597,10 @@ void mm_free(void *ptr) //ABE
   // then  lock the superblock since we'll be modifying the contents
   free_block(sb, ptr);
 
-  // if this is global heap
+  // this is the global heap so return
   if (theap->thread_id == 0)  return;
+
+  // Otherwise, check id we can reduces the number of superblocks on the thread's heap
   reduce_thread_heap(theap);
 }
 
