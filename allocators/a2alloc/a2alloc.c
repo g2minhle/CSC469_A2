@@ -15,9 +15,11 @@
 // Superblock size in bytes
 // TODO: find out the sb_size
 // sizeof(memblock) + 88
-#define SUPERBLOCK_DATA_SIZE 112
+#define SUPERBLOCK_DATA_SIZE 160
 #define SUPERBLOCK_SIZE (sizeof(struct superblock) + SUPERBLOCK_DATA_SIZE)
 #define SUPER_BLOCK_ALIGNMENT (sizeof(struct mem_block) + SUPERBLOCK_SIZE)
+
+#define CACHE_LINE 64
 
 #define K 0
 #define F 0.2
@@ -40,6 +42,7 @@
 #define GET_DATA_FROM_MEM_BLOCK(var) ((char*)var + sizeof(struct mem_block))
 #define GET_MEM_BLOCK_FROM_DATA(var) ((struct mem_block*)((char*)var - sizeof(struct mem_block)))
 
+#define INIT_LOCK(var) pthread_mutex_init(&(var), NULL)
 #define LOCK(var) pthread_mutex_lock(&(var))
 #define UNLOCK(var) pthread_mutex_unlock(&(var))
 
@@ -79,9 +82,7 @@ struct superblock {
   struct thread_meta* thread_heap;
 };
 
-
 struct allocator_meta* mem_allocator;
-
 
 /* Given a mem_block to start iterating on, first_mem_block, keep iterating until
  * a free mem_block with size available memory is found. Keep track of the
@@ -104,8 +105,8 @@ void find_free_mem_block(struct mem_block* first_mem_block,
   *free_mem_block = current_mem_block;
 }
 
-/* Return true iff need to allocate new mem_block  ABE: is this still the case? */
-int use_mem_block_for_allocation(struct mem_block* result_mem_block, size_t size) {
+/* Return the size of memmory allocated */
+int allocate_memory(struct mem_block* result_mem_block, size_t size) {
   CLEAR_FREE_BIT(result_mem_block);
   CLEAR_LARGE_BIT(result_mem_block);
   uint32_t used_space = size + sizeof(struct mem_block);
@@ -127,6 +128,43 @@ int use_mem_block_for_allocation(struct mem_block* result_mem_block, size_t size
   return result_mem_block->blk_size + extra_space;
 }
 
+struct mem_block* expand_memory(struct mem_block* previous_mb, size_t size) {
+  struct mem_block* result_mb;
+  if (GET_FREE_BIT(previous_mb)){
+    result_mb = previous_mb;
+    // Expand the memory
+    void* result = mem_sbrk(size - result_mb->blk_size);
+    if (result == NULL) {
+      UNLOCK(mem_allocator->mem_lock);
+      return NULL;
+    }
+  } else {
+    // Expand the memory
+    void* result = mem_sbrk(size + sizeof(struct mem_block));
+    if (result == NULL) {
+      UNLOCK(mem_allocator->mem_lock);
+      return NULL;
+    }
+
+    // Create a new free mem block
+    struct mem_block* new_mb = (struct mem_block*)(
+      (char*)previous_mb
+      + sizeof(struct mem_block)
+      + previous_mb->blk_size
+    );
+
+    new_mb->next = NULL;
+    new_mb->previous = previous_mb;
+
+    previous_mb->next = new_mb;
+    result_mb = new_mb;
+  }
+  CLEAR_FREE_BIT(result_mb);
+  CLEAR_LARGE_BIT(result_mb);
+  result_mb->blk_size = size;
+  return result_mb;
+}
+
 /* ABE:??
  * This is try to lock the memory down mem_allocator->mem_lock
  */
@@ -141,72 +179,44 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
   if(free_mem_block) {
     // Found a memory block to be used
     result_mem_block = free_mem_block;
-    use_mem_block_for_allocation(result_mem_block, size);
+    allocate_memory(result_mem_block, size);
   } else {
-    // reached the last block, with no available memory
-    if (GET_FREE_BIT(previous_mem_block)){
-      result_mem_block = previous_mem_block;
-      // Expand the memory
-      void* result = mem_sbrk(size - result_mem_block->blk_size);
-      if (result == NULL) {
-        UNLOCK(mem_allocator->mem_lock);
-        return NULL;
-      }
-    } else {
-      // Expand the memory
-      void* result = mem_sbrk(size + sizeof(struct mem_block));
-      if (result == NULL) {
-        UNLOCK(mem_allocator->mem_lock);
-        return NULL;
-      }
-
-      // Create a new free mem block
-      struct mem_block* new_mem_block = (struct mem_block*)(
-        (char*)previous_mem_block
-        + sizeof(struct mem_block)
-        + previous_mem_block->blk_size
-      );
-
-      new_mem_block->blk_size = size;
-
-      new_mem_block->next = NULL;
-      new_mem_block->previous = previous_mem_block;
-
-      previous_mem_block->next = new_mem_block;
-      result_mem_block = new_mem_block;
-    }
-    CLEAR_FREE_BIT(result_mem_block);
-    CLEAR_LARGE_BIT(result_mem_block);
-    result_mem_block->blk_size = size;
+    result_mem_block = expand_memory(previous_mem_block, size);
   }
   UNLOCK(mem_allocator->mem_lock);
   return result_mem_block;
 }
 
-uint32_t find_total_size_needed(size_t size, size_t multiplier) {
-  uint32_t total_space_including_mem_block = size + sizeof(struct mem_block);
-  uint32_t block_count = total_space_including_mem_block / multiplier;
-
-  // usable memory
-  uint32_t result = multiplier *  block_count;
-
-  if (result < total_space_including_mem_block) {
-    // exact that space or extra
+uint32_t size_alignment(size_t size, size_t multiplier) {
+  uint32_t block_count = size / multiplier;
+  uint32_t result = multiplier * block_count;
+  
+  if (result < size) {
     result += multiplier;
   }
 
+  return result;
+}
+
+uint32_t find_total_size_needed(size_t size, size_t multiplier) {
+  uint32_t total_space_including_mem_block = size + sizeof(struct mem_block);
+  uint32_t result = size_alignment(total_space_including_mem_block, multiplier);
   result -= sizeof(struct mem_block);
   return result;
+}
+
+struct mem_block* allocate_memory_with_super_block_alignment(uint32_t size) {
+  uint32_t total_size_need = find_total_size_needed(size, SUPER_BLOCK_ALIGNMENT);
+  return allocate_mem_block(mem_allocator->first_mem_block, total_size_need);
 }
 
 /* Allocate at least size amount of memory for a large object on the global heap.
  * Return a pointer to the start of the data/usable memory in the large object.
  */
 void* allocate_large_object(uint32_t size) {
-  // Allocate memory for the global heap meta structure -- ABE??
-  uint32_t total_size_need = find_total_size_needed(size, SUPER_BLOCK_ALIGNMENT);
-
-  struct mem_block* new_mem_block = allocate_mem_block(mem_allocator->first_mem_block, total_size_need);
+  struct mem_block* new_mem_block = 
+    allocate_memory_with_super_block_alignment(size);
+    
   if (new_mem_block == NULL) return NULL;
   SET_LARGE_BIT(new_mem_block);
 
@@ -214,10 +224,8 @@ void* allocate_large_object(uint32_t size) {
 }
 
 struct superblock* allocate_superblock() {
-  // Allocate memory for the global heap meta structure
-  uint32_t total_size_need =  find_total_size_needed(SUPERBLOCK_SIZE, SUPER_BLOCK_ALIGNMENT);
-
-  struct mem_block* new_mem_block = allocate_mem_block(mem_allocator->first_mem_block, total_size_need);
+  struct mem_block* new_mem_block = 
+    allocate_memory_with_super_block_alignment(sizeof(struct superblock));
 
   if (new_mem_block == NULL) return NULL;
 
@@ -233,24 +241,23 @@ struct superblock* allocate_superblock() {
   mem_block->next = NULL;
   mem_block->previous = NULL;
 
-  pthread_mutex_init(&result->sb_lock, NULL);
+  INIT_LOCK(result->sb_lock);
 
   return result;
 }
 
 
 struct thread_meta* allocate_thread_meta(pid_t thread_id) {
-  // Allocate memory for the global heap meta structure
-  uint32_t total_size_need =  find_total_size_needed(sizeof(struct thread_meta), SUPER_BLOCK_ALIGNMENT);
-
-  struct mem_block* new_mem_block = allocate_mem_block(mem_allocator->first_mem_block, total_size_need);
+  struct mem_block* new_mem_block = 
+    allocate_memory_with_super_block_alignment(sizeof(struct thread_meta));
 
   if (new_mem_block == NULL) return NULL;
 
   struct thread_meta* result = (struct thread_meta*)
     GET_DATA_FROM_MEM_BLOCK(new_mem_block);
 
-  pthread_mutex_init(&result->thread_lock, NULL);
+  INIT_LOCK(result->thread_lock);
+  result->first_superblock = NULL;
   result->thread_id = thread_id;
   return result;
 }
@@ -413,7 +420,7 @@ int free_mem_block(struct mem_block* mem_block) {
 void* allocate_block(struct superblock* free_sb, struct mem_block* free_mblk, uint32_t sz){
   LOCK(free_sb->sb_lock);
 
-  size_t mem_allocated = use_mem_block_for_allocation(free_mblk, sz);
+  size_t mem_allocated = allocate_memory(free_mblk, sz);
   free_sb->free_mem -= mem_allocated;
 
   UNLOCK(free_sb->sb_lock);
@@ -477,9 +484,19 @@ void free_large_object(struct mem_block* large_object_mem_block) {
 /* Given a ptr, typically to the start of the block of data, try to find the
  * corresponding memory block metadata */
 struct mem_block* get_mem_block_from_pointer(void *ptr) {
-  uint32_t block_count = (uint32_t)((((char*)ptr - (char*)mem_allocator) - sizeof(struct allocator_meta)) / SUPER_BLOCK_ALIGNMENT);
-
-  return (struct mem_block*)((char*) mem_allocator + sizeof(struct  allocator_meta) + SUPER_BLOCK_ALIGNMENT * block_count);
+  uint32_t block_count = (uint32_t)(
+    (
+      ( (char*)ptr - (char*)mem_allocator ) 
+      - sizeof(struct allocator_meta)
+    ) / SUPER_BLOCK_ALIGNMENT
+  );
+  uint32_t mem_allocator_size = size_alignment(sizeof(struct allocator_meta), CACHE_LINE);
+  
+  return (struct mem_block*)(
+    (char*) mem_allocator 
+    + mem_allocator_size
+    + SUPER_BLOCK_ALIGNMENT * block_count
+  );
 }
 
 /* Free a used block, the data ptr, from a superblock. */
@@ -616,19 +633,20 @@ int mm_init(void)
    * because the bencmarker will go multithread right away.
    * need space for you preserved data as well
    */
-  void* result = mem_sbrk (sizeof(struct allocator_meta) + SUPER_BLOCK_ALIGNMENT * 10);
+  uint32_t mem_allocator_size = size_alignment(sizeof(struct allocator_meta), CACHE_LINE);
+  void* result = mem_sbrk (mem_allocator_size + SUPER_BLOCK_ALIGNMENT * 10);
 
   if (result == NULL) return -1;
 
-  mem_allocator = (struct allocator_meta*)dseg_lo;
+  mem_allocator = (struct allocator_meta*) dseg_lo;
   mem_allocator->heap_list = NULL;
-  pthread_mutex_init(&mem_allocator->mem_lock, NULL);
-  pthread_mutex_init(&mem_allocator->heap_list_lock, NULL);
+  INIT_LOCK(mem_allocator->mem_lock);
+  INIT_LOCK(mem_allocator->heap_list_lock);
 
   mem_allocator->first_mem_block = (struct mem_block*)(
-    (char*)mem_allocator + sizeof(struct allocator_meta)
+    (char*)dseg_lo + mem_allocator_size
   );
-
+  
   struct mem_block* first_mem_block = mem_allocator->first_mem_block;
 
   SET_FREE_BIT(first_mem_block);
@@ -639,20 +657,13 @@ int mm_init(void)
 
   // Total space we have
   first_mem_block->blk_size = dseg_hi - dseg_lo + 1;
-  // Minus the preserve space
-  first_mem_block->blk_size -= sizeof (struct allocator_meta);
-  // Minus the the memblock itself
+  first_mem_block->blk_size -= mem_allocator_size;
   first_mem_block->blk_size -= sizeof (struct mem_block);
-
-
+  
   mem_allocator->global_heap = allocate_thread_meta(0);
-
   if (mem_allocator->global_heap == NULL) return -1;
 
-  // Init the global heap meta structure
   mem_allocator->global_heap->next = NULL;
-  mem_allocator->global_heap->first_superblock = NULL;
-
   return 0;
 }
-
+  
