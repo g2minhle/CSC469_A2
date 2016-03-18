@@ -70,6 +70,7 @@ struct mem_block {
 struct thread_meta {
    pid_t thread_id;
    pthread_mutex_t thread_lock;
+   uint64_t used;
    struct thread_meta* next;
    struct superblock* first_superblock;
 };
@@ -464,6 +465,9 @@ void *mm_malloc(size_t sz) // ABE
   size_t mem_allocated = allocate_memory(free_mb, sz);
   free_sb->free_mem -= mem_allocated;
   void* blk_data = GET_DATA_FROM_MEM_BLOCK(free_mb);
+
+  // update the amount of memory used in the current theap.
+  curr_theap->used += free_mb->blk_size;
   
   UNLOCK(free_sb->sb_lock);
   // release used locks before returning
@@ -508,6 +512,11 @@ void free_block(struct superblock* sb, void *data){
   struct mem_block* mem_block = GET_MEM_BLOCK_FROM_DATA(data);
   sb->free_mem += mem_block->blk_size;
 
+  struct thread_meta* hmeta = sb->thread_heap;
+  LOCK(hmeta->thread_lock);
+  hmeta->used -= mem_block->blk_size;
+  UNLOCK(hmeta->thread_lock);
+
   // actually free the memory block
   int consolidation_count = free_mem_block(mem_block);
   sb->free_mem += consolidation_count * sizeof(struct mem_block);
@@ -526,27 +535,10 @@ void reduce_thread_heap(struct thread_meta* theap) {
   struct superblock* smallest_superblock = NULL;
   struct superblock* current_sb = theap->first_superblock;
 
-  /* We don't keep track of how full or empty a heap is, so we need to calculate
-   * the fullneess on the fly by iterating through all the superblocks and
-   * noting how empty they are. */
-  while(current_sb) {
-
-    // Keep track of the most free superblock such that if we deem the heap
-    // empty enough, we don't have to iterate through the superblocks a second
-    // time to find the emptiest.
-    if (!smallest_superblock || current_sb->free_mem > smallest_superblock->free_mem){
-      smallest_superblock = current_sb;
-    }
-
-    sb_count++;
-    total_free += current_sb->free_mem;
-    current_sb =  current_sb->next;
-  }
-
   uint32_t total_heap_size = SUPERBLOCK_DATA_SIZE * sb_count - sizeof(struct mem_block);
 
   // free-ness threshold checking
-  if (sb_count > K && (1 - ((double)total_free / (double)total_heap_size )) < F) {
+  if (sb_count > K && (theap->used / (double)total_heap_size ) < F) {
     // Great! Time to evict a superblock
 
     // if the superblock we're planning on evicting comes first in the thread's
