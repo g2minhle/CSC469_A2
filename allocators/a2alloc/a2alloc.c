@@ -318,16 +318,6 @@ struct superblock*  find_usuable_superblock_on_lheap(struct thread_meta* theap,
   return final_sb;
 }
 
-void remove_superblock_from_current_list(struct superblock* superblock) {
-
-}
-
-/*
- * Retrun a given superblock to global heap
- */
-void thread_release_superblock(struct superblock* superblock) { //Minh
-
-}
 
 struct superblock* acquire_superblock_from_global() {
   struct superblock* new_sb;
@@ -468,41 +458,9 @@ void free_large_object(struct mem_block* large_object_mem_block) {
 }
 
 struct mem_block* get_mem_block_from_pointer(void *ptr) {
-  uint32_t block_count = (uint32_t)(
-      (
-        ((char*)ptr - (char*)mem_allocator)
-        - sizeof(struct allocator_meta)
-      )
-      / SUPER_BLOCK_ALIGNMENT
-  );
-  return (struct mem_block*)(
-    (char*) mem_allocator
-    + sizeof(struct  allocator_meta)
-    + SUPER_BLOCK_ALIGNMENT * block_count
-  );
-}
+  uint32_t block_count = (uint32_t)((((char*)ptr - (char*)mem_allocator) - sizeof(struct allocator_meta)) / SUPER_BLOCK_ALIGNMENT);
 
-/* Given a thread's heap metadata, if a thread's emptiness is below a threshold,
- * return a locked superblock meant to be free, while holding the heap lock. If
- * the thread is not below the emptiness threshold, return NULL while holding
- * no locks. */
-struct superblock*  is_free_enough(struct thread_meta* theap)
-{
-  // work kind of like a test and test and set. test if it's possibly free enough,
-  // then attempt to find the first empty sb locking the superblocks as we traverse.
-  // once an empty sb has been found (and locked), lock the heap, determine if it's
-  // empty enough, and if it is, return the locked sb while holding the heap lock.
-  // determine if the heap seems empty enough.
-  // if not return immediately
-  return NULL;
-}
-
-/* Given a superblock, evict the superblock from the thread's heap, and put it
- * up into the global heap. Consolidation is done in this function. Assume that
- * the sb's lock, the corressponding thread's lock and the global heap lock are
- * held. */
-void evict_superblock_to_gheap (struct superblock* sb)
-{
+  return (struct mem_block*)((char*) mem_allocator + sizeof(struct  allocator_meta) + SUPER_BLOCK_ALIGNMENT * block_count);
 }
 
 /* Free a used block, the data ptr, from a superblock. */
