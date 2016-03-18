@@ -467,6 +467,8 @@ void free_large_object(struct mem_block* large_object_mem_block) {
   UNLOCK(mem_allocator->mem_lock);
 }
 
+/* Given a ptr, typically to the start of the block of data, try to find the
+ * corresponding memory block metadata */
 struct mem_block* get_mem_block_from_pointer(void *ptr) {
   uint32_t block_count = (uint32_t)((((char*)ptr - (char*)mem_allocator) - sizeof(struct allocator_meta)) / SUPER_BLOCK_ALIGNMENT);
 
