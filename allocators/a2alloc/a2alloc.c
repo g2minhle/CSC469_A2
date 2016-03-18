@@ -411,9 +411,8 @@ int free_mem_block(struct mem_block* mem_block) {
   return consolidation_count;
 }
 
-/* Allocate a free  block from within a locked superblock. Return a pointer to
- * the data of the block if the allocation worked. Otherwise return NULL. Does
- * not release the superblock lock. */
+/* Allocate a free  block from within a superblock. Return a pointer to
+ * the data of the block if the allocation worked. Otherwise return NULL. */
 void* allocate_block(struct superblock* free_sb, struct mem_block* free_mblk, uint32_t sz){
   LOCK(free_sb->sb_lock);
   size_t mem_allocated = use_mem_block_for_allocation(free_mblk, sz);
