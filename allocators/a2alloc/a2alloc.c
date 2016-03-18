@@ -183,15 +183,18 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
   return result_mem_block;
 }
 
-uint32_t find_total_size_need(size_t size, size_t multiplier) {
+uint32_t find_total_size_needed(size_t size, size_t multiplier) {
   uint32_t total_space_including_mem_block = size + sizeof(struct mem_block);
   uint32_t block_count = total_space_including_mem_block / multiplier;
+
   // usable memory
   uint32_t result = multiplier *  block_count;
+
   if (result < total_space_including_mem_block) {
     // exact that space or extra
     result += multiplier;
   }
+
   result -= sizeof(struct mem_block);
   return result;
 }
@@ -201,7 +204,7 @@ uint32_t find_total_size_need(size_t size, size_t multiplier) {
  */
 void* allocate_large_object(uint32_t size) {
   // Allocate memory for the global heap meta structure
-  uint32_t total_size_need = find_total_size_need(size, SUPER_BLOCK_ALIGNMENT);
+  uint32_t total_size_need = find_total_size_needed(size, SUPER_BLOCK_ALIGNMENT);
 
   struct mem_block* new_mem_block = allocate_mem_block(mem_allocator->first_mem_block, total_size_need);
   if (new_mem_block == NULL) return NULL;
@@ -211,10 +214,7 @@ void* allocate_large_object(uint32_t size) {
 
 struct superblock* allocate_superblock() {
   // Allocate memory for the global heap meta structure
-  uint32_t total_size_need =  find_total_size_need(
-    SUPERBLOCK_SIZE,
-    SUPER_BLOCK_ALIGNMENT
-  );
+  uint32_t total_size_need =  find_total_size_needed(SUPERBLOCK_SIZE, SUPER_BLOCK_ALIGNMENT);
 
   struct mem_block* new_mem_block = allocate_mem_block(
         mem_allocator->first_mem_block,
@@ -246,10 +246,7 @@ struct superblock* allocate_superblock() {
 
 struct thread_meta* allocate_thread_meta(pid_t thread_id) {
   // Allocate memory for the global heap meta structure
-  uint32_t total_size_need =  find_total_size_need(
-    sizeof(struct thread_meta),
-    SUPER_BLOCK_ALIGNMENT
-  );
+  uint32_t total_size_need =  find_total_size_needed(sizeof(struct thread_meta), SUPER_BLOCK_ALIGNMENT);
 
   struct mem_block* new_mem_block = allocate_mem_block(
         mem_allocator->first_mem_block,
