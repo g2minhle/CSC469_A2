@@ -82,8 +82,6 @@ struct superblock {
   struct thread_meta* thread_heap;
 };
 
-int count =0;
-
 struct allocator_meta* mem_allocator;
 
 /* Given a mem_block to start iterating on, first_mem_block, keep iterating until
@@ -431,7 +429,6 @@ int free_mem_block(struct mem_block* mem_block) {
  */
 void *mm_malloc(size_t sz) // ABE
 {
-  printf("malloc start");
   if (sz > LARGE_OBJECT_DATA_SIZE) {
     // the size they are trying to allocate is too large to store in a superblock,
     // so allocate a large object
@@ -468,7 +465,6 @@ void *mm_malloc(size_t sz) // ABE
   UNLOCK(free_sb->sb_lock);
   // release used locks before returning
   UNLOCK(curr_theap->thread_lock);
-  printf("malloc end \n");
   return blk_data;
 }
 
@@ -594,12 +590,7 @@ void reduce_thread_heap(struct thread_meta* theap) {
  */
 void mm_free(void *ptr) //ABE
 {
-  count++;
-  if (count == 71174){
-    count = 0;
-  }
 
-  printf("free start \n");
   struct mem_block* mem_block = get_mem_block_from_pointer(ptr);
 
   // check if the block is large
@@ -620,7 +611,6 @@ void mm_free(void *ptr) //ABE
 
   // Otherwise, check id we can reduces the number of superblocks on the thread's heap
   reduce_thread_heap(theap);
-    printf("free end \n");
 }
 
 /* Before calling mm_malloc or mm_free, the application program calls mm_init
@@ -630,7 +620,6 @@ void mm_free(void *ptr) //ABE
  */
 int mm_init(void)
 {
-printf("init start \n");
   if (dseg_lo != NULL || dseg_hi != NULL) {
     return 0;
   }
@@ -674,6 +663,6 @@ printf("init start \n");
 
   mem_allocator->global_heap->next = NULL;
   return 0;
-  printf("init end \n");
+
 }
   
