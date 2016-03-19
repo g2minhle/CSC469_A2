@@ -82,7 +82,6 @@ struct superblock {
   struct thread_meta* thread_heap;
 };
 
-int count =0;
 
 struct allocator_meta* mem_allocator;
 
@@ -593,10 +592,6 @@ void reduce_thread_heap(struct thread_meta* theap) {
  */
 void mm_free(void *ptr) //ABE
 {
-  count++;
-  if (count == 71174){
-    count = 0;
-  }
 
   struct mem_block* mem_block = get_mem_block_from_pointer(ptr);
 
