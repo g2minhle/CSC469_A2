@@ -71,6 +71,7 @@ struct thread_meta {
    pid_t thread_id;
    pthread_mutex_t thread_lock;
    uint64_t used;
+   uint8_t sb_count; /* keep track of how many superblocks there are within the heap */
    struct thread_meta* next;
    struct superblock* first_superblock;
 };
@@ -381,6 +382,8 @@ struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t
   new_sb->next = theap->first_superblock;
 
   theap->first_superblock = new_sb;
+
+  theap->sb_count++;
   return new_sb;
 }
 
@@ -522,57 +525,63 @@ void free_block(struct superblock* sb, void *data){
 }
 
 /* Check to see if we can reduce the number of superblocks from a specified
- * thread's heap. If the heap is below a certain threshold, evict a
- * superblock from the heap to the global heap. */
-void reduce_thread_heap(struct thread_meta* theap) {
+ * thread's heap. Check that the 3 conditions are met before evicting sb
+ * 1. the superblock is still free,
+ * 2. there are at least K superblocks on the thread's heap
+ * 3. the heap has an overall usage of less than F, a percentage.
+ */
+void reduce_thread_heap(struct thread_meta* theap, struct superblock* sb) {
   LOCK(theap->thread_lock);
+  LOCK(sb->sb_lock);
 
-  uint32_t sb_count = 0;
-  uint32_t total_free = 0;
-  struct superblock* smallest_superblock = NULL;
-  struct superblock* current_sb = theap->first_superblock;
+  uint32_t total_heap_size = SUPERBLOCK_DATA_SIZE * (theap->sb_count - sizeof(struct mem_block));
 
-  uint32_t total_heap_size = SUPERBLOCK_DATA_SIZE * sb_count - sizeof(struct mem_block);
+  // We'll check if any condition is not met in order to return early
+  if (sb->free_mem < (SUPERBLOCK_DATA_SIZE-sizeof(struct mem_block))
+      || theap->sb_count <= K || (theap->used/(double)total_heap_size) >= F) {
+    UNLOCK(sb->sb_lock);
+    UNLOCK(theap->thread_lock);
+    return;
+  }
+  // Else, the heap is free enough, such that we'll evict a superblock
 
-  // free-ness threshold checking
-  if (sb_count > K && (theap->used / (double)total_heap_size ) < F) {
-    // Great! Time to evict a superblock
-
-    // if the superblock we're planning on evicting comes first in the thread's
-    // superblock list, then adjust the pointer accordingly.
-    if (smallest_superblock == theap->first_superblock) {
-      theap->first_superblock = theap->first_superblock->next;
-    }
-
-    // readjust the next and previous pointers accordingly (keep in mind that
-    // the list of superblock on a thread's heap are kept in non-circular
-    // doubly linked list.
-    if (smallest_superblock->next) {
-      smallest_superblock->next->previous = smallest_superblock->previous;
-    }
-    if (smallest_superblock->previous) {
-      smallest_superblock->previous->next = smallest_superblock->next;
-    }
-
-    LOCK(mem_allocator->global_heap->thread_lock);
-
-    // Now to move this superblock to the end of the global heap's list of
-    // superblocks
-    smallest_superblock->previous = NULL;
-    smallest_superblock->next = mem_allocator->global_heap->first_superblock;
-    smallest_superblock->thread_heap = mem_allocator->global_heap;
-
-    // keep in mind that the global heap has a circular doubly linked list of
-    // superblocks.
-    if (mem_allocator->global_heap->first_superblock) {
-      mem_allocator->global_heap->first_superblock->previous = smallest_superblock;
-    }
-
-    mem_allocator->global_heap->first_superblock = smallest_superblock;
-
-    UNLOCK(mem_allocator->global_heap->thread_lock);
+  // if the superblock we're planning on evicting comes first in the thread's
+  // superblock list, then adjust the pointer accordingly.
+  if (sb == theap->first_superblock) {
+    theap->first_superblock = theap->first_superblock->next;
   }
 
+  // readjust the next and previous pointers accordingly (keep in mind that
+  // the list of superblock on a thread's heap are kept in non-circular
+  // doubly linked list.
+  if (sb->next) {
+    sb->next->previous = sb->previous;
+  }
+  if (sb->previous) {
+    sb->previous->next = sb->next;
+  }
+
+  // Reduce the number of superblock that the thread heap has
+  theap->sb_count--;
+
+  LOCK(mem_allocator->global_heap->thread_lock);
+
+  // Now to move this superblock to the end of the global heap's list of
+  // superblocks
+  sb->previous = NULL;
+  sb->next = mem_allocator->global_heap->first_superblock;
+  sb->thread_heap = mem_allocator->global_heap;
+
+  // keep in mind that the global heap has a circular doubly linked list of
+  // superblocks.
+  if (mem_allocator->global_heap->first_superblock) {
+    mem_allocator->global_heap->first_superblock->previous = sb;
+  }
+
+  mem_allocator->global_heap->first_superblock = sb;
+
+  UNLOCK(mem_allocator->global_heap->thread_lock);
+  UNLOCK(sb->sb_lock);
   UNLOCK(theap->thread_lock);
 }
 
@@ -602,8 +611,8 @@ void mm_free(void *ptr) //ABE
   // this is the global heap so return
   if (theap->thread_id == 0)  return;
 
-  // Otherwise, check id we can reduces the number of superblocks on the thread's heap
-  reduce_thread_heap(theap);
+  // Attempt to evice the current superblock from the thread's heap
+  reduce_thread_heap(theap, sb);
 }
 
 /* Before calling mm_malloc or mm_free, the application program calls mm_init
