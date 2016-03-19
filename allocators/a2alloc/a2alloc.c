@@ -261,6 +261,7 @@ struct thread_meta* allocate_thread_meta(pid_t thread_id) {
   INIT_LOCK(result->thread_lock);
   result->first_superblock = NULL;
   result->thread_id = thread_id;
+  result->used = 0;
   return result;
 }
 
