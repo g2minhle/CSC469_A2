@@ -373,6 +373,11 @@ struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t
   // otherwise we acquired a superblock, now we just need to set up the metadata.
   new_sb->previous = NULL;
   new_sb->thread_heap = theap;
+  
+  if (theap->first_superblock) {
+    theap->first_superblock->previous = new_sb;
+  }
+  
   new_sb->next = theap->first_superblock;
 
   theap->first_superblock = new_sb;
@@ -518,11 +523,26 @@ void free_block(struct superblock* sb, void *data){
 void reduce_thread_heap(struct thread_meta* theap, struct superblock* sb) {
   uint32_t total_heap_size = SUPERBLOCK_DATA_SIZE * (theap->sb_count - sizeof(struct mem_block));
 
+  if(sb == 0x7fffe7802698){
+    int i = 0 ;
+    int j = 0;
+    i = j + 1;
+    j = i + 1;
+  }
+
   // We'll check if any condition is not met in order to return early
   if (sb->free_mem < (SUPERBLOCK_DATA_SIZE-sizeof(struct mem_block))
       || theap->sb_count <= K || (theap->used/(double)total_heap_size) >= F) {
     return;
   }
+  
+  if(sb == 0x7fffe7802698){
+    int i = 0 ;
+    int j = 0;
+    i = j + 1;
+    j = i + 1;
+  }
+  
   // Else, the heap is free enough, such that we'll evict a superblock
 
   // if the superblock we're planning on evicting comes first in the thread's
@@ -584,7 +604,12 @@ void mm_free(void *ptr) //ABE
   // the block is not empty so it wont be move to other places after acquiring sb then the theap
   struct thread_meta* theap = sb->thread_heap;  
   LOCK(theap->thread_lock); 
-
+  if(sb == 0x7fffe7802698 && ptr == 0x7fffe7802770){
+    int i = 0 ;
+    int j = 0;
+    i = j + 1;
+    j = i + 1;
+  }
   // then  lock the superblock since we'll be modifying the contents
   free_block(sb, ptr);
 
