@@ -141,6 +141,28 @@ void find_free_mem_block(struct mem_block* first_mem_block,
   *free_mem_block = current_mem_block;
 }
 
+void add_mem_block_to_free_list(struct mem_block* mb){
+  if (mem_allocator->free_list) {
+    mem_allocator->free_list->previous_free = mb;
+  }
+  mb->next_free = mem_allocator->free_list;
+  mem_allocator->free_list = mb;
+}
+
+
+void rm_mem_block_from_free_list(struct mem_block* mb){
+  if(mb->next_free) {
+    mb->next_free->previous_free = mb->previous_free;
+  }
+  
+  if(mb->previous_free) {
+    mb->previous_free->next_free = mb->next_free;
+  } else {
+    mem_allocator->free_list = mb->next_free;
+  }  
+}
+
+
 /* Return the size of memmory allocated */
 uint32_t allocate_memory(struct mem_block* result_mem_block, size_t size, bool add_free_list) {
   CLEAR_FREE_BIT(result_mem_block);
@@ -164,11 +186,7 @@ uint32_t allocate_memory(struct mem_block* result_mem_block, size_t size, bool a
     result_mem_block->next = new_mem_block;
     result_mem_block->blk_size = size;
     if (add_free_list == TRUE) {
-      new_mem_block->next_free = mem_allocator->free_list;
-      if (mem_allocator->free_list) {
-        mem_allocator->free_list->previous_free = new_mem_block;
-      }
-      mem_allocator->free_list = new_mem_block;
+      add_mem_block_to_free_list(new_mem_block);
       if (result_mem_block == mem_allocator->last_mb) {
         mem_allocator->last_mb = new_mem_block;
       }
@@ -225,18 +243,7 @@ struct mem_block* allocate_mem_block(struct mem_block* first_mem_block,
     // Found a memory block to be used
     result_mem_block = free_mem_block;
     allocate_memory(result_mem_block, size, TRUE);
-
-    if (free_mem_block->next_free) {
-      free_mem_block->next_free->previous_free = previous_mem_block;
-    }
-
-    // remove from free list    
-    if (previous_mem_block) {
-      previous_mem_block->next_free = free_mem_block->next_free;
-    } else {
-      mem_allocator->free_list = free_mem_block->next_free;
-    }   
-
+    rm_mem_block_from_free_list(result_mem_block);
   } else {   
     result_mem_block = expand_memory(mem_allocator->last_mb, size);
     mem_allocator->last_mb = result_mem_block;
@@ -448,15 +455,7 @@ void consolidate_mem_block(struct mem_block* mem_block, bool in_free_list) {
   }
   
   if (in_free_list){
-     if(mem_block->next->next_free) {
-       mem_block->next->next_free->previous_free = mem_block->next->previous_free;
-     }
-     
-     if(mem_block->next->previous_free){
-        mem_block->next->previous_free->next_free = mem_block->next->next_free;
-     } else {
-       mem_allocator->free_list = mem_block->next->next_free; 
-     }
+    rm_mem_block_from_free_list(mem_block->next);
   }
   
   mem_block->blk_size += sizeof(struct mem_block);
@@ -495,15 +494,6 @@ uint32_t free_mem_block(struct mem_block* mem_block, bool in_free_list ) {
     freed += sizeof(struct mem_block);
     large_object_mem_block = mem_block->previous;
   }
-  if (in_free_list) {
-    // large_object_mem_block
-    large_object_mem_block->next_free = mem_allocator->free_list;
-    if (mem_allocator->free_list) {
-      mem_allocator->free_list->previous_free = large_object_mem_block;
-    }
-    mem_allocator->free_list = large_object_mem_block;
-  }
-
 
   return freed;
 }
