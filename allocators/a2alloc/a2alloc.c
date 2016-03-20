@@ -11,7 +11,7 @@
 
 #define TRUE 1
 #define FALSE 0
-#define LARGE_OBJECT_DATA_SIZE SUPERBLOCK_DATA_SIZE
+#define LARGE_OBJECT_DATA_SIZE (SUPERBLOCK_DATA_SIZE / 2)
 // Superblock size in bytes
 // TODO: find out the sb_size
 // sizeof(memblock) + 88
@@ -95,7 +95,11 @@ void find_free_mem_block(struct mem_block* first_mem_block,
     size_t size) {
   struct mem_block* current_mem_block = first_mem_block;
 
-  while (current_mem_block && ( current_mem_block->blk_size < size || !GET_FREE_BIT(current_mem_block))) {
+  while (current_mem_block 
+          && ( current_mem_block->blk_size < size 
+                || !GET_FREE_BIT(current_mem_block)
+              )
+          ) {
     /* All we are looking for is a free space that is larger or equal to
      * the size we are looking for. we dont care about alignment, since we will
      * handle such issues later as they arise.
@@ -108,20 +112,20 @@ void find_free_mem_block(struct mem_block* first_mem_block,
 }
 
 /* Return the size of memmory allocated */
-int allocate_memory(struct mem_block* result_mem_block, size_t size) {
+uint32_t allocate_memory(struct mem_block* result_mem_block, size_t size) {
   CLEAR_FREE_BIT(result_mem_block);
   CLEAR_LARGE_BIT(result_mem_block);
-  uint32_t used_space = size + sizeof(struct mem_block);
+  uint32_t space_with_new_mb = size + sizeof(struct mem_block);
   uint32_t extra_space = 0;
-  if(used_space < result_mem_block->blk_size) {
+  if(space_with_new_mb < result_mem_block->blk_size) {
     // create a new free mem block
     extra_space = sizeof(struct mem_block);
     struct mem_block* new_mem_block = (struct mem_block*)(
-      (char*)result_mem_block + used_space
+      (char*)result_mem_block + space_with_new_mb
     );
     SET_FREE_BIT(new_mem_block);
     CLEAR_LARGE_BIT(new_mem_block);
-    new_mem_block->blk_size = result_mem_block->blk_size - used_space;
+    new_mem_block->blk_size = result_mem_block->blk_size - space_with_new_mb;
     new_mem_block->next = result_mem_block->next;
     new_mem_block->previous = result_mem_block;
     result_mem_block->next = new_mem_block;
@@ -136,17 +140,11 @@ struct mem_block* expand_memory(struct mem_block* previous_mb, size_t size) {
     result_mb = previous_mb;
     // Expand the memory
     void* result = mem_sbrk(size - result_mb->blk_size);
-    if (result == NULL) {
-      UNLOCK(mem_allocator->mem_lock);
-      return NULL;
-    }
+    if (result == NULL) return NULL;
   } else {
     // Expand the memory
     void* result = mem_sbrk(size + sizeof(struct mem_block));
-    if (result == NULL) {
-      UNLOCK(mem_allocator->mem_lock);
-      return NULL;
-    }
+    if (result == NULL) return NULL;
 
     // Create a new free mem block
     struct mem_block* new_mb = (struct mem_block*)(
@@ -222,17 +220,24 @@ void* allocate_large_object(uint32_t size) {
   if (new_mem_block == NULL) return NULL;
   SET_LARGE_BIT(new_mem_block);
 
-  return (void*)GET_DATA_FROM_MEM_BLOCK(new_mem_block);
+  return (void*)(
+    GET_DATA_FROM_MEM_BLOCK(new_mem_block)
+  );
 }
 
 struct superblock* allocate_superblock() {
   struct mem_block* new_mem_block = 
-    allocate_memory_with_super_block_alignment(sizeof(struct superblock));
+    allocate_memory_with_super_block_alignment(SUPERBLOCK_SIZE);
 
   if (new_mem_block == NULL) return NULL;
 
-  struct superblock* result = (struct superblock*) GET_DATA_FROM_MEM_BLOCK(new_mem_block);
-  struct mem_block* mem_block = (struct mem_block*)((char*) result + sizeof(struct superblock));
+  struct superblock* result = (struct superblock*)(
+    GET_DATA_FROM_MEM_BLOCK(new_mem_block)
+  );
+  
+  struct mem_block* mem_block = (struct mem_block*)(
+    (char*) result + sizeof(struct superblock)
+  );
 
   mem_block->blk_size = SUPERBLOCK_DATA_SIZE - sizeof(struct mem_block);
   result->free_mem = mem_block->blk_size;
@@ -245,15 +250,15 @@ struct superblock* allocate_superblock() {
   return result;
 }
 
-
 struct thread_meta* allocate_thread_meta(pid_t thread_id) {
   struct mem_block* new_mem_block = 
     allocate_memory_with_super_block_alignment(sizeof(struct thread_meta));
 
   if (new_mem_block == NULL) return NULL;
 
-  struct thread_meta* result = (struct thread_meta*)
-    GET_DATA_FROM_MEM_BLOCK(new_mem_block);
+  struct thread_meta* result = (struct thread_meta*)(
+    GET_DATA_FROM_MEM_BLOCK(new_mem_block)
+  );
 
   INIT_LOCK(result->thread_lock);
   result->first_superblock = NULL;
@@ -278,7 +283,7 @@ struct thread_meta* add_and_find_curr_thread_meta() {
   UNLOCK(mem_allocator->heap_list_lock);
 
   // Try to find the current thread's heap's metadata in the linked list
-  while(current_thread_heap && current_thread_heap->thread_id != thread_id) {
+  while(current_thread_heap && (current_thread_heap->thread_id != thread_id)) {
     current_thread_heap = current_thread_heap->next;
   }
 
@@ -313,7 +318,9 @@ struct superblock*  find_usable_superblock_on_lheap(struct thread_meta* theap,
   struct superblock* final_sb = NULL;
   struct superblock* current_sb = theap->first_superblock;
   while(current_sb) {
-    struct mem_block* sb_first_mem_block = (struct mem_block*)((char*)current_sb + sizeof(struct superblock));
+    struct mem_block* sb_first_mem_block = (struct mem_block*)(
+      (char*)current_sb + sizeof(struct superblock)
+    );
 
     if (!final_sb || current_sb->free_mem < final_sb->free_mem){
       find_free_mem_block(sb_first_mem_block, &free_mem_block, &previous_mem_block, sz);
@@ -392,27 +399,27 @@ void consolidate_mem_block(struct mem_block* mem_block) {
  * Any lock must be hold before executing this since this can happen
  * inside or outside a superblock.
  *
- * Return total number of consolidation that occurred. This needed to manage
- * the free usage of a superblock <- ABE:??
+ * Return total number of space freed
  */
-int free_mem_block(struct mem_block* mem_block) {
+uint32_t free_mem_block(struct mem_block* mem_block) {
   SET_FREE_BIT(mem_block);
+  CLEAR_LARGE_BIT(mem_block);
 
-  int consolidation_count = 0; /* keep track of how many consolidations occur */
+  uint32_t freed = mem_block->blk_size;
 
   // consolidate with the next/following memory block
   if (mem_block->next && GET_FREE_BIT(mem_block->next)) {
     consolidate_mem_block(mem_block);
-    consolidation_count++;
+    freed += sizeof(struct mem_block);
   }
 
   //consolidate with the previous memory block
   if (mem_block->previous && GET_FREE_BIT(mem_block->previous)) {
     consolidate_mem_block(mem_block->previous);
-    consolidation_count++;
+    freed += sizeof(struct mem_block);
   }
 
-  return consolidation_count;
+  return freed;
 }
 
 /* The mm_malloc routine returns a pointer to an allocated region of at least
@@ -445,22 +452,19 @@ void *mm_malloc(size_t sz) // ABE
         UNLOCK(curr_theap->thread_lock);
         return NULL;
       }
-      struct mem_block* sb_first_mem_block = (struct mem_block*)((char*) free_sb + sizeof(struct superblock));
+      struct mem_block* sb_first_mem_block = (struct mem_block*)(
+        (char*) free_sb 
+        + sizeof(struct superblock)
+      );
       struct mem_block* previous_mem_block = NULL;
       find_free_mem_block(sb_first_mem_block, &free_mb, &previous_mem_block, sz);
   }
-  void* blk_data ;
-  /*if (free_sb ==  0x7fffe7891698){
-    blk_data = NULL;
-  }
-  if (free_mb == 0x7fffe789171f) {
-    blk_data = NULL;
-  }*/
-  size_t mem_allocated = allocate_memory(free_mb, sz);
+  
+  uint mem_allocated = allocate_memory(free_mb, sz);
   free_sb->free_mem -= mem_allocated;
   curr_theap->used += mem_allocated; 
   
-  blk_data = GET_DATA_FROM_MEM_BLOCK(free_mb);
+  void* blk_data = GET_DATA_FROM_MEM_BLOCK(free_mb);
 
   // release used locks before returning
   UNLOCK(curr_theap->thread_lock);
@@ -478,7 +482,7 @@ void free_large_object(struct mem_block* large_object_mem_block) {
 
 /* Given a ptr, typically to the start of the block of data, try to find the
  * corresponding memory block metadata */
-struct mem_block* get_mem_block_from_pointer(void *ptr) {
+struct mem_block* get_mem_block_from_pointer  (void *ptr) {
   uint32_t mem_allocator_size = size_alignment(sizeof(struct allocator_meta), CACHE_LINE);
   uint32_t block_count = (uint32_t)(
     (
@@ -498,14 +502,11 @@ struct mem_block* get_mem_block_from_pointer(void *ptr) {
 /* Free a used block, the data ptr, from a superblock. */
 void free_block(struct superblock* sb, void *data){
   // Find the corresponding mem_block metadata for data
-  struct mem_block* mem_block = GET_MEM_BLOCK_FROM_DATA(data);
-  sb->free_mem += mem_block->blk_size;
-  sb->thread_heap->used -= mem_block->blk_size;
-  
+  struct mem_block* mem_block = GET_MEM_BLOCK_FROM_DATA(data); 
   // actually free the memory block
-  int consolidation_count = free_mem_block(mem_block);
-  sb->free_mem += consolidation_count * sizeof(struct mem_block);
-  sb->thread_heap->used -= consolidation_count * sizeof(struct mem_block);
+  uint32_t freed = free_mem_block(mem_block);
+  sb->free_mem += freed;
+  sb->thread_heap->used -= freed;
 }
 
 /* Check to see if we can reduce the number of superblocks from a specified
