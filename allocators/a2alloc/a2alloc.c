@@ -15,7 +15,7 @@
 // Superblock size in bytes
 // TODO: find out the sb_size
 // sizeof(memblock) + 88
-#define SUPERBLOCK_DATA_SIZE 200
+#define SUPERBLOCK_DATA_SIZE 200 + 64 * 10
 #define SUPERBLOCK_SIZE (sizeof(struct superblock) + SUPERBLOCK_DATA_SIZE)
 #define SUPER_BLOCK_ALIGNMENT (sizeof(struct mem_block) + SUPERBLOCK_SIZE)
 
