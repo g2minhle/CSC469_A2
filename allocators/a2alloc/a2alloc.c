@@ -128,6 +128,9 @@ uint32_t allocate_memory(struct mem_block* result_mem_block, size_t size) {
     new_mem_block->blk_size = result_mem_block->blk_size - space_with_new_mb;
     new_mem_block->next = result_mem_block->next;
     new_mem_block->previous = result_mem_block;
+    if (result_mem_block->next) {
+      result_mem_block->next->previous = new_mem_block;
+    }
     result_mem_block->next = new_mem_block;
     result_mem_block->blk_size = size;
   }
@@ -198,15 +201,11 @@ uint32_t size_alignment(size_t size, size_t multiplier) {
   return result;
 }
 
-uint32_t find_total_size_needed(size_t size, size_t multiplier) {
-  uint32_t total_space_including_mem_block = size + sizeof(struct mem_block);
-  uint32_t result = size_alignment(total_space_including_mem_block, multiplier);
-  result -= sizeof(struct mem_block);
-  return result;
-}
-
 struct mem_block* allocate_memory_with_super_block_alignment(uint32_t size) {
-  uint32_t total_size_need = find_total_size_needed(size, SUPER_BLOCK_ALIGNMENT);
+  uint32_t total_space_including_mem_block = size + sizeof(struct mem_block);
+  uint32_t total_size_need = size_alignment(total_space_including_mem_block, 
+                                            SUPER_BLOCK_ALIGNMENT);
+  total_size_need -= sizeof(struct mem_block);
   return allocate_mem_block(mem_allocator->first_mem_block, total_size_need);
 }
 
@@ -389,13 +388,13 @@ struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t
  * which is also free. (Checks that the memory blocks are free should be done
  * before calling this function) */
 void consolidate_mem_block(struct mem_block* mem_block) {
-    mem_block->blk_size += sizeof(struct mem_block);
-    mem_block->blk_size += mem_block->next->blk_size;
-    mem_block->next = mem_block->next->next;
+  mem_block->blk_size += sizeof(struct mem_block);
+  mem_block->blk_size += mem_block->next->blk_size;
+  mem_block->next = mem_block->next->next;
 
-    if (mem_block->next) {
-      mem_block->next->previous = mem_block;
-    }
+  if (mem_block->next) {
+    mem_block->next->previous = mem_block;
+  }
 }
 
 /*
@@ -447,7 +446,7 @@ void *mm_malloc(size_t sz) // ABE
   // and the heap's lock.
   struct mem_block* free_mb = NULL;
   struct superblock* free_sb = find_usable_superblock_on_lheap(curr_theap, &free_mb, sz);
-
+  
   if (free_sb == NULL){
       free_sb = thread_acquire_superblock(curr_theap, sz);
       if (free_sb == NULL)
@@ -465,7 +464,7 @@ void *mm_malloc(size_t sz) // ABE
       find_free_mem_block(sb_first_mem_block, &free_mb, &previous_mem_block, sz);
   }
   
-  uint mem_allocated = allocate_memory(free_mb, sz);
+  uint32_t mem_allocated = allocate_memory(free_mb, sz);
   free_sb->free_mem -= mem_allocated;
   curr_theap->used += mem_allocated; 
   
@@ -523,24 +522,10 @@ void free_block(struct superblock* sb, void *data){
 void reduce_thread_heap(struct thread_meta* theap, struct superblock* sb) {
   uint32_t total_heap_size = SUPERBLOCK_DATA_SIZE * (theap->sb_count - sizeof(struct mem_block));
 
-  if(sb == 0x7fffe7802698){
-    int i = 0 ;
-    int j = 0;
-    i = j + 1;
-    j = i + 1;
-  }
-
   // We'll check if any condition is not met in order to return early
   if (sb->free_mem < (SUPERBLOCK_DATA_SIZE-sizeof(struct mem_block))
       || theap->sb_count <= K || (theap->used/(double)total_heap_size) >= F) {
     return;
-  }
-  
-  if(sb == 0x7fffe7802698){
-    int i = 0 ;
-    int j = 0;
-    i = j + 1;
-    j = i + 1;
   }
   
   // Else, the heap is free enough, such that we'll evict a superblock
@@ -604,12 +589,7 @@ void mm_free(void *ptr) //ABE
   // the block is not empty so it wont be move to other places after acquiring sb then the theap
   struct thread_meta* theap = sb->thread_heap;  
   LOCK(theap->thread_lock); 
-  if(sb == 0x7fffe7802698 && ptr == 0x7fffe7802770){
-    int i = 0 ;
-    int j = 0;
-    i = j + 1;
-    j = i + 1;
-  }
+
   // then  lock the superblock since we'll be modifying the contents
   free_block(sb, ptr);
 
@@ -671,4 +651,4 @@ int mm_init(void)
   mem_allocator->global_heap->next = NULL;
   return 0;
 }
-  
+    
