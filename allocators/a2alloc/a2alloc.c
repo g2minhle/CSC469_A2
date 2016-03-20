@@ -11,11 +11,11 @@
 
 #define TRUE 1
 #define FALSE 0
-#define LARGE_OBJECT_DATA_SIZE (SUPERBLOCK_DATA_SIZE / 2)
+#define LARGE_OBJECT_DATA_SIZE SUPERBLOCK_DATA_SIZE
 // Superblock size in bytes
 // TODO: find out the sb_size
 // sizeof(memblock) + 88
-#define SUPERBLOCK_DATA_SIZE 160
+#define SUPERBLOCK_DATA_SIZE 200
 #define SUPERBLOCK_SIZE (sizeof(struct superblock) + SUPERBLOCK_DATA_SIZE)
 #define SUPER_BLOCK_ALIGNMENT (sizeof(struct mem_block) + SUPERBLOCK_SIZE)
 
@@ -71,14 +71,13 @@ struct thread_meta {
    pid_t thread_id;
    pthread_mutex_t thread_lock;
    uint64_t used;
-   uint8_t sb_count; /* keep track of how many superblocks there are within the heap */
+   uint32_t sb_count; /* keep track of how many superblocks there are within the heap */
    struct thread_meta* next;
    struct superblock* first_superblock;
 };
 
 struct superblock {
   uint32_t free_mem;
-  pthread_mutex_t sb_lock;
   struct superblock* next;
   struct superblock* previous;
   struct thread_meta* thread_heap;
@@ -233,18 +232,15 @@ struct superblock* allocate_superblock() {
   if (new_mem_block == NULL) return NULL;
 
   struct superblock* result = (struct superblock*) GET_DATA_FROM_MEM_BLOCK(new_mem_block);
-  result->free_mem = SUPERBLOCK_DATA_SIZE - sizeof(struct mem_block);
-
   struct mem_block* mem_block = (struct mem_block*)((char*) result + sizeof(struct superblock));
 
-  mem_block->blk_size = result->free_mem;
+  mem_block->blk_size = SUPERBLOCK_DATA_SIZE - sizeof(struct mem_block);
+  result->free_mem = mem_block->blk_size;
 
   SET_FREE_BIT(mem_block);
   CLEAR_LARGE_BIT(mem_block);
   mem_block->next = NULL;
   mem_block->previous = NULL;
-
-  INIT_LOCK(result->sb_lock);
 
   return result;
 }
@@ -316,26 +312,17 @@ struct superblock*  find_usable_superblock_on_lheap(struct thread_meta* theap,
   struct mem_block* previous_mem_block;
   struct superblock* final_sb = NULL;
   struct superblock* current_sb = theap->first_superblock;
-  int unlock;
   while(current_sb) {
-    unlock = TRUE;
-    LOCK(current_sb->sb_lock);
     struct mem_block* sb_first_mem_block = (struct mem_block*)((char*)current_sb + sizeof(struct superblock));
 
     if (!final_sb || current_sb->free_mem < final_sb->free_mem){
       find_free_mem_block(sb_first_mem_block, &free_mem_block, &previous_mem_block, sz);
 
       if(free_mem_block) {
-        unlock = FALSE;
-        if (final_sb) UNLOCK(final_sb->sb_lock);
         *final_free_mem_block = free_mem_block;
         final_sb = current_sb;
       }
-    }    
-    if (unlock) {
-      UNLOCK(current_sb->sb_lock);
-    }
-    
+    }        
     current_sb =  current_sb->next;
   }
 
@@ -375,7 +362,6 @@ struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t
     new_sb = allocate_superblock();
     if (new_sb == NULL) return NULL; /* we tried, fail here */
   }   
-  LOCK(new_sb->sb_lock);
 
   // otherwise we acquired a superblock, now we just need to set up the metadata.
   new_sb->previous = NULL;
@@ -383,7 +369,6 @@ struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t
   new_sb->next = theap->first_superblock;
 
   theap->first_superblock = new_sb;
-
   theap->sb_count++;
   return new_sb;
 }
@@ -464,12 +449,19 @@ void *mm_malloc(size_t sz) // ABE
       struct mem_block* previous_mem_block = NULL;
       find_free_mem_block(sb_first_mem_block, &free_mb, &previous_mem_block, sz);
   }
-
+  void* blk_data ;
+  /*if (free_sb ==  0x7fffe7891698){
+    blk_data = NULL;
+  }
+  if (free_mb == 0x7fffe789171f) {
+    blk_data = NULL;
+  }*/
   size_t mem_allocated = allocate_memory(free_mb, sz);
   free_sb->free_mem -= mem_allocated;
-  void* blk_data = GET_DATA_FROM_MEM_BLOCK(free_mb);
+  curr_theap->used += mem_allocated; 
   
-  UNLOCK(free_sb->sb_lock);
+  blk_data = GET_DATA_FROM_MEM_BLOCK(free_mb);
+
   // release used locks before returning
   UNLOCK(curr_theap->thread_lock);
   return blk_data;
@@ -505,9 +497,6 @@ struct mem_block* get_mem_block_from_pointer(void *ptr) {
 
 /* Free a used block, the data ptr, from a superblock. */
 void free_block(struct superblock* sb, void *data){
-  LOCK(sb->thread_heap->thread_lock);
-  LOCK(sb->sb_lock);
-
   // Find the corresponding mem_block metadata for data
   struct mem_block* mem_block = GET_MEM_BLOCK_FROM_DATA(data);
   sb->free_mem += mem_block->blk_size;
@@ -516,9 +505,7 @@ void free_block(struct superblock* sb, void *data){
   // actually free the memory block
   int consolidation_count = free_mem_block(mem_block);
   sb->free_mem += consolidation_count * sizeof(struct mem_block);
-
-  UNLOCK(sb->sb_lock);
-  UNLOCK(sb->thread_heap->thread_lock);
+  sb->thread_heap->used -= consolidation_count * sizeof(struct mem_block);
 }
 
 /* Check to see if we can reduce the number of superblocks from a specified
@@ -528,39 +515,11 @@ void free_block(struct superblock* sb, void *data){
  * 3. the heap has an overall usage of less than F, a percentage.
  */
 void reduce_thread_heap(struct thread_meta* theap, struct superblock* sb) {
-  LOCK(theap->thread_lock);
-  LOCK(sb->sb_lock);
-
-<<<<<<< HEAD
-  uint32_t sb_count = 0;
-  uint32_t total_free = 0;
-  struct superblock* smallest_superblock = NULL;
-  struct superblock* current_sb = theap->first_superblock;
-
-  /* We don't keep track of how full or empty a heap is, so we need to calculate
-   * the fullneess on the fly by iterating through all the superblocks and
-   * noting how empty they are. */
-  while(current_sb) {
-
-    // Keep track of the most free superblock such that if we deem the heap
-    // empty enough, we don't have to iterate through the superblocks a second
-    // time to find the emptiest.
-    if (!smallest_superblock || current_sb->free_mem > smallest_superblock->free_mem){
-      smallest_superblock = current_sb;
-    }
-
-    sb_count++;
-    total_free += current_sb->free_mem;
-    current_sb =  current_sb->next;
-  }
-
   uint32_t total_heap_size = SUPERBLOCK_DATA_SIZE * (theap->sb_count - sizeof(struct mem_block));
 
   // We'll check if any condition is not met in order to return early
   if (sb->free_mem < (SUPERBLOCK_DATA_SIZE-sizeof(struct mem_block))
       || theap->sb_count <= K || (theap->used/(double)total_heap_size) >= F) {
-    UNLOCK(sb->sb_lock);
-    UNLOCK(theap->thread_lock);
     return;
   }
   // Else, the heap is free enough, such that we'll evict a superblock
@@ -601,8 +560,6 @@ void reduce_thread_heap(struct thread_meta* theap, struct superblock* sb) {
   mem_allocator->global_heap->first_superblock = sb;
 
   UNLOCK(mem_allocator->global_heap->thread_lock);
-  UNLOCK(sb->sb_lock);
-  UNLOCK(theap->thread_lock);
 }
 
 /* The mm_free routine is only guaranteed to work when it is passed pointers
@@ -612,7 +569,6 @@ void reduce_thread_heap(struct thread_meta* theap, struct superblock* sb) {
  */
 void mm_free(void *ptr) //ABE
 {
-
   struct mem_block* mem_block = get_mem_block_from_pointer(ptr);
 
   // check if the block is large
@@ -623,16 +579,19 @@ void mm_free(void *ptr) //ABE
 
   // This is a superblock. find the block that needs to be freed
   struct superblock* sb = (struct superblock*) GET_DATA_FROM_MEM_BLOCK(mem_block);
-  struct thread_meta* theap = sb->thread_heap;
+  // since we are freeing a block in sb, 
+  // the block is not empty so it wont be move to other places after acquiring sb then the theap
+  struct thread_meta* theap = sb->thread_heap;  
+  LOCK(theap->thread_lock); 
 
   // then  lock the superblock since we'll be modifying the contents
   free_block(sb, ptr);
 
-  // this is the global heap so return
-  if (theap->thread_id == 0)  return;
-
+  // this is not the global heap
   // Attempt to evice the current superblock from the thread's heap
-  reduce_thread_heap(theap, sb);
+  if (theap->thread_id != 0) reduce_thread_heap(theap, sb);
+  
+  UNLOCK(theap->thread_lock);
 }
 
 /* Before calling mm_malloc or mm_free, the application program calls mm_init
