@@ -309,11 +309,11 @@ uint32_t size_alignment(size_t size, size_t multiplier) {
  */
 struct mem_block* allocate_memory_with_super_block_alignment(uint32_t size) {
 
-  uint32_t total_space_including_mem_block = size + sizeof(struct mem_block);
-  uint32_t total_size_need = size_alignment(total_space_including_mem_block, SUPER_BLOCK_ALIGNMENT);
+  uint32_t size_plus_mem_block = size + sizeof(struct mem_block);
+  uint32_t total_size = size_alignment(size_plus_mem_block, SUPER_BLOCK_ALIGNMENT);
 
-  total_size_need -= sizeof(struct mem_block);
-  return allocate_mem_block(total_size_need);
+  total_size -= sizeof(struct mem_block);
+  return allocate_mem_block(total_size);
 }
 
 /* Allocate at least size amount of memory for a large object on the global heap.
@@ -336,11 +336,11 @@ struct superblock* allocate_superblock() {
   if (new_mem_block == NULL)
     return NULL;
 
-  struct superblock* result = (struct superblock*)(GET_DATA_FROM_MEM_BLOCK(new_mem_block));
-  struct mem_block* mem_block = (struct mem_block*)((char*) result + sizeof(struct superblock));
+  struct superblock* result_sb = (struct superblock*)(GET_DATA_FROM_MEM_BLOCK(new_mem_block));
+  struct mem_block* mem_block = (struct mem_block*)((char*) result_sb + sizeof(struct superblock));
 
   mem_block->blk_size = SUPERBLOCK_DATA_SIZE - sizeof(struct mem_block);
-  result->free_mem = mem_block->blk_size;
+  result_sb->free_mem = mem_block->blk_size;
 
   SET_FREE_BIT(mem_block);
   CLEAR_LARGE_BIT(mem_block);
@@ -348,24 +348,24 @@ struct superblock* allocate_superblock() {
   mem_block->next = NULL;
   mem_block->previous = NULL;
 
-  return result;
+  return result_sb;
 }
 
 /* Return the allocated thread's heap metadata that has been initialized. */
-struct thread_meta* allocate_thread_meta(pid_t thread_id) {
+struct thread_meta* allocate_thread_meta(pid_t tid) {
   struct mem_block* new_mem_block = allocate_memory_with_super_block_alignment(sizeof(struct thread_meta));
 
   if (new_mem_block == NULL)
     return NULL;
 
-  struct thread_meta* result = (struct thread_meta*)(GET_DATA_FROM_MEM_BLOCK(new_mem_block));
-  INIT_LOCK(result->thread_lock);
-  result->first_superblock = NULL;
-  result->thread_id = thread_id;
-  result->used = 0;
-  result->sb_count = 0;
+  struct thread_meta* result_tm = (struct thread_meta*)(GET_DATA_FROM_MEM_BLOCK(new_mem_block));
+  INIT_LOCK(result_tm->thread_lock);
+  result_tm->first_superblock = NULL;
+  result_tm->thread_id = tid;
+  result_tm->used = 0;
+  result_tm->sb_count = 0;
 
-  return result;
+  return result_tm;
 }
 
 
@@ -374,8 +374,8 @@ struct thread_meta* allocate_thread_meta(pid_t thread_id) {
  * and add the current thread's heap's metadata to the start of the allocator's
  * thread metadata list. then return the newly added thread metadata. */
 struct thread_meta* add_and_find_curr_thread_meta() {
-  pid_t thread_id = getTID();
-  struct thread_meta* result;
+  pid_t tid = getTID();
+  struct thread_meta* result_tm;
 
   // NB: this lock probably doesn't need to be used
   LOCK(mem_allocator->heap_list_lock);
@@ -383,23 +383,23 @@ struct thread_meta* add_and_find_curr_thread_meta() {
   UNLOCK(mem_allocator->heap_list_lock);
 
   // Try to find the current thread's heap's metadata in the linked list
-  while(current_thread_heap && (current_thread_heap->thread_id != thread_id)) {
+  while(current_thread_heap && (current_thread_heap->thread_id != tid)) {
     current_thread_heap = current_thread_heap->next;
   }
 
-  result = current_thread_heap;
-  if (result == NULL) {
-    result = allocate_thread_meta(thread_id);
+  result_tm = current_thread_heap;
+  if (result_tm == NULL) {
+    result_tm = allocate_thread_meta(tid);
 
     // lock the list of thread metadata so that we can add new metadata.
     LOCK(mem_allocator->heap_list_lock);
 
-    result->next = mem_allocator->heap_list;
-    mem_allocator->heap_list = result;
+    result_tm->next = mem_allocator->heap_list;
+    mem_allocator->heap_list = result_tm;
 
     UNLOCK(mem_allocator->heap_list_lock);
   }
-  return result;
+  return result_tm;
 }
 
 
