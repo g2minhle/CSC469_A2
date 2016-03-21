@@ -12,9 +12,8 @@
 #define TRUE 1
 #define FALSE 0
 #define LARGE_OBJECT_DATA_SIZE (SUPERBLOCK_DATA_SIZE / 2)
+
 // Superblock size in bytes
-// TODO: find out the sb_size
-// sizeof(memblock) + 88
 #define SUPERBLOCK_DATA_SIZE 184
 #define SUPERBLOCK_SIZE (sizeof(struct superblock) + SUPERBLOCK_DATA_SIZE)
 #define SUPER_BLOCK_ALIGNMENT (sizeof(struct mem_block) + SUPERBLOCK_SIZE)
@@ -87,53 +86,58 @@ struct superblock {
   struct thread_meta* thread_heap;
 };
 
+struct allocator_meta* mem_allocator; /* The almighty allocator */
 
-struct allocator_meta* mem_allocator;
-
-/* Given a mem_block to start iterating on, first_mem_block, keep iterating until
- * a free mem_block with size available memory is found. Keep track of the
- * mem_block before the free mem_block in previous_mem_block */
+/* Given a mem_block to start iterating on, first_mem_block, use the
+ * [previous|next]_free pointers to find a suitable memory block that is large
+ * enough. The free and usable memory block is stored in free_mem_block.
+ * Also keep track of, and sets the previous free mem block <- we didn't have time
+ * to remove this without breaking stuff.
+ *
+ * Note that the free_mem_block can be NULL if a suitable memory block was not
+ * found.
+ */
 void find_free_mem_block_with_free_list(struct mem_block* first_mem_block,
     struct mem_block** free_mem_block,
     struct mem_block** previous_mem_block,
     size_t size) {
   struct mem_block* current_mem_block = first_mem_block;
 
-  while (current_mem_block 
-          && ( current_mem_block->blk_size < size 
-                || !GET_FREE_BIT(current_mem_block)
-              )
-          ) {
-    /* All we are looking for is a free space that is larger or equal to
-     * the size we are looking for. we dont care about alignment, since we will
-     * handle such issues later as they arise.
-     */
+  /* All we are looking for is a free space that is larger or equal to
+   * the size we are looking for. we dont care about alignment, since we will
+   * handle such issues later as they arise.
+   */
+  while (current_mem_block
+      && (current_mem_block->blk_size < size || !GET_FREE_BIT(current_mem_block))) {
     *previous_mem_block = current_mem_block;
     current_mem_block = current_mem_block->next_free;
   }
 
+  /* set the free_mem_block -> note that this can be null */
   *free_mem_block = current_mem_block;
 }
 
 
-/* Given a mem_block to start iterating on, first_mem_block, keep iterating until
- * a free mem_block with size available memory is found. Keep track of the
- * mem_block before the free mem_block in previous_mem_block */
+/* Given a mem_block to start iterating on, first_mem_block, using the next and 
+ * previous pointers. Keep iterating until a free mem_block with size
+ * available memory is found. Keep track of the mem_block before the
+ * free mem_block in previous_mem_block.
+ *
+ * Not that the free_mem_block can be NULL is a suitable memory block was not
+ * found.
+ * */
 void find_free_mem_block(struct mem_block* first_mem_block,
     struct mem_block** free_mem_block,
     struct mem_block** previous_mem_block,
     size_t size) {
   struct mem_block* current_mem_block = first_mem_block;
 
-  while (current_mem_block 
-          && ( current_mem_block->blk_size < size 
-                || !GET_FREE_BIT(current_mem_block)
-              )
-          ) {
-    /* All we are looking for is a free space that is larger or equal to
-     * the size we are looking for. we dont care about alignment, since we will
-     * handle such issues later as they arise.
-     */
+  /* All we are looking for is a free space that is larger or equal to
+   * the size we are looking for. we dont care about alignment, since we will
+   * handle such issues later as they arise.
+   */
+  while (current_mem_block
+      && (current_mem_block->blk_size < size || !GET_FREE_BIT(current_mem_block))) {
     *previous_mem_block = current_mem_block;
     current_mem_block = current_mem_block->next;
   }
@@ -141,6 +145,9 @@ void find_free_mem_block(struct mem_block* first_mem_block,
   *free_mem_block = current_mem_block;
 }
 
+/* Append a passed in memory block to the fron tof the memory allocator's free
+ * memory block list.
+ */
 void add_mem_block_to_free_list(struct mem_block* mb){
   if (mem_allocator->free_list) {
     mem_allocator->free_list->previous_free = mb;
@@ -149,7 +156,9 @@ void add_mem_block_to_free_list(struct mem_block* mb){
   mem_allocator->free_list = mb;
 }
 
-
+/* Remove the passed in memory block from the free list it exists in.
+ * Note: this does not NULL out the [next|previous]_free pointers.
+ * */
 void rm_mem_block_from_free_list(struct mem_block* mb){
   if(mb->next_free) {
     mb->next_free->previous_free = mb->previous_free;
