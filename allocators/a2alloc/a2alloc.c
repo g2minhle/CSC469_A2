@@ -479,7 +479,6 @@ uint32_t free_mem_block(struct mem_block* mem_block, bool in_free_list ) {
   SET_FREE_BIT(mem_block);
   CLEAR_LARGE_BIT(mem_block);
 
-  struct mem_block* large_object_mem_block = mem_block;
   uint32_t freed = mem_block->blk_size;
 
   // consolidate with the next/following memory block
@@ -487,12 +486,15 @@ uint32_t free_mem_block(struct mem_block* mem_block, bool in_free_list ) {
     consolidate_mem_block(mem_block, in_free_list);
     freed += sizeof(struct mem_block);
   }
+  
+  if (in_free_list) {
+    rm_mem_block_from_free_list(mem_block);
+  }
 
   //consolidate with the previous memory block
   if (mem_block->previous && GET_FREE_BIT(mem_block->previous)) {
     consolidate_mem_block(mem_block->previous, in_free_list);
     freed += sizeof(struct mem_block);
-    large_object_mem_block = mem_block->previous;
   }
 
   return freed;
