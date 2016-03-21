@@ -172,28 +172,43 @@ void rm_mem_block_from_free_list(struct mem_block* mb){
 }
 
 
-/* Return the size of memmory allocated */
+/* Given a memory block, result_mem_block, set the memory as allocated, and
+ * shrink the result_mem_block's blocksize to the requested size, if there is
+ * enough space at the end of the data to include a new mem_block.
+ */
 uint32_t allocate_memory(struct mem_block* result_mem_block, size_t size, bool add_free_list) {
   CLEAR_FREE_BIT(result_mem_block);
   CLEAR_LARGE_BIT(result_mem_block);
-  uint32_t space_with_new_mb = size + sizeof(struct mem_block);
-  uint32_t extra_space = 0;
-  if(space_with_new_mb < result_mem_block->blk_size) {
-    // create a new free mem block
+
+  uint32_t size_plus_mb = size + sizeof(struct mem_block);
+  uint32_t extra_space = 0; /* blocksize of added new mem_block if it fits */
+
+  // see if there is enough space in result_mem_block, after allocating size,
+  // suck that a new block and corresponding memblock can be added. otherwise
+  // let result_mem->blk_size remain the same size.
+  if(size_plus_mb < result_mem_block->blk_size) {
+    
+    // calculate the size of the new_mem_block's block size
     extra_space = sizeof(struct mem_block);
-    struct mem_block* new_mem_block = (struct mem_block*)(
-      (char*)result_mem_block + space_with_new_mb
-    );
+    struct mem_block* new_mem_block = (struct mem_block*) ((char*)result_mem_block + size_plus_mb);
+
+    // initialize the new memory block's values
     SET_FREE_BIT(new_mem_block);
     CLEAR_LARGE_BIT(new_mem_block);
-    new_mem_block->blk_size = result_mem_block->blk_size - space_with_new_mb;
+
+    new_mem_block->blk_size = result_mem_block->blk_size - size_plus_mb;
+
+    // set the pointers to include new_mem_block into the list of memory blocks
     new_mem_block->next = result_mem_block->next;
     new_mem_block->previous = result_mem_block;
+
     if (result_mem_block->next) {
       result_mem_block->next->previous = new_mem_block;
     }
+
     result_mem_block->next = new_mem_block;
     result_mem_block->blk_size = size;
+
     if (add_free_list == TRUE) {
       add_mem_block_to_free_list(new_mem_block);
       if (result_mem_block == mem_allocator->last_mb) {
@@ -201,6 +216,7 @@ uint32_t allocate_memory(struct mem_block* result_mem_block, size_t size, bool a
       }
     }
   }
+
   return result_mem_block->blk_size + extra_space;
 }
 
