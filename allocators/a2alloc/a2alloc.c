@@ -148,6 +148,7 @@ void add_to_free_list(struct mem_block** free_list, struct mem_block* mb){
     (*free_list)->previous_free = mb;
   }
   mb->next_free = *free_list;
+  mb->previous_free = NULL;
   *free_list = mb;
 }
 
