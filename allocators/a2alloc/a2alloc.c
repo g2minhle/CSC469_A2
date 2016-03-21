@@ -15,7 +15,7 @@
 // Superblock size in bytes
 // TODO: find out the sb_size
 // sizeof(memblock) + 88
-#define SUPERBLOCK_DATA_SIZE 184
+#define SUPERBLOCK_DATA_SIZE 184 + 64 * 10
 #define SUPERBLOCK_SIZE (sizeof(struct superblock) + SUPERBLOCK_DATA_SIZE)
 #define SUPER_BLOCK_ALIGNMENT (sizeof(struct mem_block) + SUPERBLOCK_SIZE)
 
@@ -144,6 +144,12 @@ void find_free_mem_block(struct mem_block* first_mem_block,
 }
 
 void add_to_free_list(struct mem_block** free_list, struct mem_block* mb){
+  if (mb == 0x7fffe7885c40){
+   int i = 1;
+  }
+  if (!GET_FREE_BIT(mb)){
+    int i = 1;
+  }
   if (*free_list) {
     (*free_list)->previous_free = mb;
   }
@@ -153,6 +159,12 @@ void add_to_free_list(struct mem_block** free_list, struct mem_block* mb){
 }
 
 void remove_from_free_list(struct mem_block** free_list, struct mem_block* mb){
+  if (mb == 0x7fffe7885c40){
+   int i = 1;
+  }
+  if (!GET_FREE_BIT(mb)){
+    int i = 1;
+  }
   if(mb->next_free) {
     mb->next_free->previous_free = mb->previous_free;
   }
@@ -203,6 +215,7 @@ void insert_mb(struct mem_block* previous_mb, struct mem_block* new_mb) {
 
 /* Return the size of memmory allocated */
 uint32_t allocate_memory(struct mem_block* result_mem_block, size_t size, struct mem_block** free_list) {
+  remove_from_free_list(free_list, result_mem_block);
   CLEAR_FREE_BIT(result_mem_block);
   CLEAR_LARGE_BIT(result_mem_block);
   uint32_t space_with_new_mb = size + sizeof(struct mem_block);
@@ -225,7 +238,6 @@ uint32_t allocate_memory(struct mem_block* result_mem_block, size_t size, struct
       mem_allocator->last_mb = new_mem_block;
     }
   }
-  remove_from_free_list(free_list, result_mem_block);
   return result_mem_block->blk_size + extra_space;
 }
 
@@ -495,15 +507,15 @@ uint32_t free_mem_block(struct mem_block* mem_block, struct mem_block** free_lis
   // consolidate with the next/following memory block
   if (mem_block->next && GET_FREE_BIT(mem_block->next)) {
     consolidate_mem_block(mem_block, free_list);
-    freed += sizeof(struct mem_block);
-  }
+    freed += sizeof(struct mem_block);    
+  } 
+  
+  add_to_free_list(free_list, mem_block);
 
   //consolidate with the previous memory block
   if (mem_block->previous && GET_FREE_BIT(mem_block->previous)) {
     consolidate_mem_block(mem_block->previous, free_list);
     freed += sizeof(struct mem_block);
-  } else {
-    add_to_free_list(free_list, mem_block);
   }
 
   return freed;
@@ -653,13 +665,8 @@ int mm_init(void)
 
   if (mem_init() == -1 ) return -1;
 
-  /*
-   * Consider allocate around 5 to 10 superblock in the begining
-   * because the bencmarker will go multithread right away.
-   * need space for you preserved data as well
-   */
   uint32_t mem_allocator_size = size_alignment(sizeof(struct allocator_meta), CACHE_LINE);
-  void* result = mem_sbrk (mem_allocator_size + SUPER_BLOCK_ALIGNMENT * 10);
+  void* result = mem_sbrk (mem_allocator_size + SUPER_BLOCK_ALIGNMENT * 2);
 
   if (result == NULL) return -1;
 
