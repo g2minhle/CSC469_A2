@@ -161,7 +161,34 @@ void remove_from_free_list(struct mem_block** free_list, struct mem_block* mb){
     mb->previous_free->next_free = mb->next_free;
   } else {
     *free_list = mb->next_free;
-  }  
+  }    
+}
+
+void add_to_thread_heap(struct thread_meta* theap, struct superblock* sb){
+  sb->thread_heap = theap;
+  sb->next = theap->first_superblock;
+  if (theap->first_superblock) {
+    theap->first_superblock->previous = sb;
+  }
+  theap->first_superblock = sb;
+  sb->previous = NULL;
+  theap->sb_count++;
+}
+
+
+void remove_thread_heap(struct superblock* sb){
+  struct thread_meta* theap = sb->thread_heap;
+  if(sb->next) {
+    sb->next->previous = sb->previous;
+  }
+  
+  if(sb->previous) {
+    sb->previous->next = sb->next;
+  } else {
+    theap->first_superblock = sb->next;
+  }    
+  
+  theap->sb_count--;
 }
 
 
@@ -393,14 +420,10 @@ struct superblock* acquire_superblock_from_global() {
   struct superblock* new_sb;
 
   LOCK(mem_allocator->global_heap->thread_lock);
-
+  
   new_sb = mem_allocator->global_heap->first_superblock;
-  if (new_sb){
-    mem_allocator->global_heap->first_superblock = new_sb->next;
-
-    if (mem_allocator->global_heap->first_superblock) {
-      mem_allocator->global_heap->first_superblock->previous = NULL;
-    }
+  if (new_sb) {
+    remove_thread_heap(new_sb);
   }
 
   UNLOCK(mem_allocator->global_heap->thread_lock);
@@ -423,23 +446,16 @@ struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t
     if (new_sb == NULL) return NULL; 
   }   
 
+  add_to_thread_heap(theap, new_sb); 
+
   // otherwise we acquired a superblock, now we just need to set up the metadata.
-  new_sb->previous = NULL;
-  new_sb->thread_heap = theap;
   add_to_free_list(
     &theap->free_list, 
     (struct mem_block*)(
       (char*)new_sb + sizeof(struct superblock)
     )
-  );
-  if (theap->first_superblock) {
-    theap->first_superblock->previous = new_sb;
-  }
-  
-  new_sb->next = theap->first_superblock;
+  );   
 
-  theap->first_superblock = new_sb;
-  theap->sb_count++;
   return new_sb;
 }
 
@@ -574,25 +590,9 @@ void reduce_thread_heap(struct thread_meta* theap, struct superblock* sb) {
     return;
   }
   
-  // Else, the heap is free enough, such that we'll evict a superblock
-
-  // if the superblock we're planning on evicting comes first in the thread's
-  // superblock list, then adjust the pointer accordingly.
-  if (sb == theap->first_superblock) {
-    theap->first_superblock = theap->first_superblock->next;
-  }
-
-  // readjust the next and previous pointers accordingly (keep in mind that
-  // the list of superblock on a thread's heap are kept in non-circular
-  // doubly linked list.
-  if (sb->next) {
-    sb->next->previous = sb->previous;
-  }
-  if (sb->previous) {
-    sb->previous->next = sb->next;
-  }
-
-  // Reduce the number of superblock that the thread heap has
+  remove_thread_heap(sb);
+  
+    // Reduce the number of superblock that the thread heap has
   theap->sb_count--;
   remove_from_free_list(
     &theap->free_list, 
@@ -602,21 +602,9 @@ void reduce_thread_heap(struct thread_meta* theap, struct superblock* sb) {
   );
 
   LOCK(mem_allocator->global_heap->thread_lock);
-
-  // Now to move this superblock to the end of the global heap's list of
-  // superblocks
-  sb->previous = NULL;
-  sb->next = mem_allocator->global_heap->first_superblock;
-  sb->thread_heap = mem_allocator->global_heap;
-
-  // keep in mind that the global heap has a circular doubly linked list of
-  // superblocks.
-  if (mem_allocator->global_heap->first_superblock) {
-    mem_allocator->global_heap->first_superblock->previous = sb;
-  }
-
-  mem_allocator->global_heap->first_superblock = sb;
-
+  
+  add_to_thread_heap(mem_allocator->global_heap, sb);
+  
   UNLOCK(mem_allocator->global_heap->thread_lock);
 }
 
