@@ -21,8 +21,8 @@
 
 #define CACHE_LINE 64
 
-#define K 0
-#define F 0.2
+#define K 1
+#define F 1
 
 // ======================= Flags =======================
 
@@ -64,7 +64,7 @@ struct mem_block {
    * 2nd bit: Indicate if the block is a large object or not
    */
   uint8_t flags;
-  uint32_t blk_size;
+  uint16_t blk_size;
   struct mem_block* next;
   struct mem_block* previous;
   struct mem_block* next_free;
@@ -83,6 +83,7 @@ struct thread_meta {
 
 struct superblock {
   uint32_t free_mem;
+  uint16_t size_class;
   struct superblock* next;
   struct superblock* previous;
   struct thread_meta* thread_heap;
@@ -99,6 +100,16 @@ uint32_t size_alignment(size_t size, size_t multiplier) {
   }
 
   return result;
+}
+
+uint32_t adjust_class_size(size_t size) {
+  uint8_t i;
+  for (i = 1; i <= 512 ; i = i << 1 ){
+    if (size <= i) {
+      return size_alignment(size, i);
+    }
+  }
+  return size;
 }
 
 /* Given a ptr, typically to the start of the block of data, try to find the
@@ -144,12 +155,6 @@ void find_free_mem_block(struct mem_block* first_mem_block,
 }
 
 void add_to_free_list(struct mem_block** free_list, struct mem_block* mb){
-  if (mb == 0x7fffe7885c40){
-   int i = 1;
-  }
-  if (!GET_FREE_BIT(mb)){
-    int i = 1;
-  }
   if (*free_list) {
     (*free_list)->previous_free = mb;
   }
@@ -159,12 +164,6 @@ void add_to_free_list(struct mem_block** free_list, struct mem_block* mb){
 }
 
 void remove_from_free_list(struct mem_block** free_list, struct mem_block* mb){
-  if (mb == 0x7fffe7885c40){
-   int i = 1;
-  }
-  if (!GET_FREE_BIT(mb)){
-    int i = 1;
-  }
   if(mb->next_free) {
     mb->next_free->previous_free = mb->previous_free;
   }
@@ -415,11 +414,13 @@ struct superblock*  find_usable_superblock_on_lheap(struct thread_meta* theap,
         current_sb = (struct supberblock*)(
           GET_DATA_FROM_MEM_BLOCK(mem_block)
         );
-        if(!final_sb
-            || final_sb->free_mem > current_sb->free_mem){
-          *final_free_mem_block = current_mb;
-          final_sb = current_sb;
-        }        
+        if (current_sb->size_class == sz) {
+          if(!final_sb
+              || final_sb->free_mem > current_sb->free_mem){
+            *final_free_mem_block = current_mb;
+            final_sb = current_sb;
+          }        
+        }
     }        
     current_mb =  current_mb->next_free;
   }
@@ -459,6 +460,8 @@ struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t
   }   
 
   add_to_thread_heap(theap, new_sb); 
+  
+  new_sb->size_class = sz;
 
   // otherwise we acquired a superblock, now we just need to set up the metadata.
   add_to_free_list(
@@ -527,7 +530,8 @@ uint32_t free_mem_block(struct mem_block* mem_block, struct mem_block** free_lis
  */
 void *mm_malloc(size_t sz) // ABE
 {
-
+  sz = adjust_class_size(sz);
+  
   if (sz > LARGE_OBJECT_DATA_SIZE) {
     // the size they are trying to allocate is too large to store in a superblock,
     // so allocate a large object
@@ -554,7 +558,7 @@ void *mm_malloc(size_t sz) // ABE
       }      
       find_free_mem_block(curr_theap->free_list, &free_mb, sz);
   }
-
+  
   uint32_t mem_allocated = allocate_memory(free_mb, sz, &curr_theap->free_list);
   free_sb->free_mem -= mem_allocated;
   curr_theap->used += mem_allocated; 
