@@ -131,6 +131,17 @@ uint32_t size_alignment(size_t size, size_t multiplier) {
   return result;
 }
 
+/* Figure out the size class of the given size
+ * If there is no size class then return the size itsefl
+ *
+ * Args:
+ *      size_t size:
+ *          The givent size.
+ *
+ * Return:
+ *      uint32_t:
+ *          The size class or the size it self
+ */
 uint32_t adjust_class_size(size_t size) {
   uint8_t i;
   for (i = 1; i <= 512 ; i = i << 1 ){
