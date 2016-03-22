@@ -13,7 +13,7 @@
 #define FALSE 0
 #define LARGE_OBJECT_DATA_SIZE (SUPERBLOCK_DATA_SIZE / 2)
 
-#define SUPERBLOCK_DATA_SIZE 48 + 64 * 20
+#define SUPERBLOCK_DATA_SIZE 48 + 64 * 10
 #define SUPERBLOCK_SIZE (sizeof(struct superblock) + SUPERBLOCK_DATA_SIZE)
 #define SUPER_BLOCK_ALIGNMENT (sizeof(struct mem_block) + SUPERBLOCK_SIZE)
 
