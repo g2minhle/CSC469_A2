@@ -144,12 +144,28 @@ uint32_t size_alignment(size_t size, size_t multiplier) {
  */
 uint32_t adjust_class_size(size_t size) {
   uint8_t i;
-  for (i = 1; i <= 512 ; i = i << 1 ){
-    if (size <= i) {
-      return size_alignment(size, i);
-    }
+
+  if (size <= 2) {
+    return size_alignment(size, 2);
+  } else if (size <= 4) {
+    return size_alignment(size, 4);
+  } else if (size <= 8) {
+    return size_alignment(size, 8);
+  } else if (size <= 16) {
+    return size_alignment(size, 16);
+  } else if (size <= 32) {
+    return size_alignment(size, 32);
+  } else if (size <= 64) {
+    return size_alignment(size, 64);
+  } else if (size <= 128) {
+    return size_alignment(size, 128);
+  } else if (size <= 256) {
+    return size_alignment(size, 256);
+  } else if (size <= 512) {
+    return size_alignment(size, 512);
+  } else {
+    return size;
   }
-  return size;
 }
 
 /* Retun memory block metadata given the start of the block of data.
@@ -900,8 +916,6 @@ void mm_free(void *ptr)
  */
 int mm_init(void)
 {
-  printf("size of mem bl %d \n", sizeof(struct mem_block));
-  printf("size of superblock %d \n", sizeof(struct superblock));
   if (dseg_lo != NULL || dseg_hi != NULL) {
     return 0;
   }
