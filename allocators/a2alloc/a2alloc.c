@@ -90,6 +90,7 @@ struct heap {
 
 struct superblock {
   uint32_t free_mem;
+  uint16_t size_class;
 
   struct heap* heap;
 
@@ -128,6 +129,16 @@ uint32_t size_alignment(size_t size, size_t multiplier) {
   }
 
   return result;
+}
+
+uint32_t adjust_class_size(size_t size) {
+  uint8_t i;
+  for (i = 1; i <= 512 ; i = i << 1 ){
+    if (size <= i) {
+      return size_alignment(size, i);
+    }
+  }
+  return size;
 }
 
 /* Retun memory block metadata given the start of the block of data.
@@ -579,11 +590,13 @@ struct superblock* get_free_sb_on_heap(struct heap* heap,
   struct mem_block* current_mb = NULL;
 
   while(current_sb) {
-    current_mb = find_free_mb(current_sb->free_list, sz);
-    if (current_mb) {
-      *final_free_mb = current_mb;
-      final_sb = current_sb;
-      return final_sb;
+    if (current_sb->size_class == sz) {
+      current_mb = find_free_mb(current_sb->free_list, sz);
+      if (current_mb) {
+        *final_free_mb = current_mb;
+        final_sb = current_sb;
+        return final_sb;
+      }
     }
     current_sb =  current_sb->next;
   }
@@ -638,6 +651,8 @@ struct superblock* heap_acquire_new_sb(struct heap* heap, uint32_t sz) {
 
   add_sb_to_heap(heap, new_sb);
 
+  new_sb->size_class = sz;
+
   return new_sb;
 }
 
@@ -655,6 +670,8 @@ struct superblock* heap_acquire_new_sb(struct heap* heap, uint32_t sz) {
  */
 void *mm_malloc(size_t sz)
 {
+  sz = adjust_class_size(sz);
+
   if (sz > LARGE_OBJECT_DATA_SIZE) {
     // If the size they are trying to allocate is too large to store
     // in a superblock so allocate a large object
@@ -872,6 +889,8 @@ void mm_free(void *ptr)
  */
 int mm_init(void)
 {
+  printf("size of mem bl %d \n", sizeof(struct mem_block));
+  printf("size of superblock %d \n", sizeof(struct superblock));
   if (dseg_lo != NULL || dseg_hi != NULL) {
     return 0;
   }
