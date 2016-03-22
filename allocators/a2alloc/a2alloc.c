@@ -13,9 +13,7 @@
 #define FALSE 0
 #define LARGE_OBJECT_DATA_SIZE (SUPERBLOCK_DATA_SIZE / 2)
 // Superblock size in bytes
-// TODO: find out the sb_size
-// sizeof(memblock) + 88
-#define SUPERBLOCK_DATA_SIZE 184 + 64 * 10
+#define SUPERBLOCK_DATA_SIZE 178 + 64 * 20
 #define SUPERBLOCK_SIZE (sizeof(struct superblock) + SUPERBLOCK_DATA_SIZE)
 #define SUPER_BLOCK_ALIGNMENT (sizeof(struct mem_block) + SUPERBLOCK_SIZE)
 
@@ -78,7 +76,6 @@ struct thread_meta {
    uint32_t sb_count; /* keep track of how many superblocks there are within the heap */
    struct thread_meta* next;
    struct superblock* first_superblock;
-   struct mem_block* free_list;
 };
 
 struct superblock {
@@ -87,6 +84,7 @@ struct superblock {
   struct superblock* next;
   struct superblock* previous;
   struct thread_meta* thread_heap;
+  struct mem_block* free_list;
 };
 
 struct allocator_meta* mem_allocator;
@@ -330,11 +328,13 @@ struct superblock* allocate_superblock() {
 
   mem_block->blk_size = SUPERBLOCK_DATA_SIZE - sizeof(struct mem_block);
   result->free_mem = mem_block->blk_size;
-
+  result->free_list = mem_block;
   SET_FREE_BIT(mem_block);
   CLEAR_LARGE_BIT(mem_block);
   mem_block->next = NULL;
   mem_block->previous = NULL;
+  mem_block->next_free = NULL;
+  mem_block->previous_free = NULL;
 
   return result;
 }
@@ -350,7 +350,7 @@ struct thread_meta* allocate_thread_meta(pid_t thread_id) {
   );
 
   INIT_LOCK(result->thread_lock);
-  result->free_list = NULL;
+  //result->free_list = NULL;
   result->first_superblock = NULL;
   result->thread_id = thread_id;
   result->used = 0;
@@ -403,26 +403,20 @@ struct superblock*  find_usable_superblock_on_lheap(struct thread_meta* theap,
                                           size_t sz){
   // scan the list of superblocks in the heap, from most full to least,
   // checking if there is free space.
-  struct mem_block* mem_block;
-  struct superblock* current_sb;
+  struct superblock* current_sb = theap->first_superblock;
   struct superblock* final_sb = NULL;  
-  struct mem_block* current_mb = theap->free_list;
+  struct mem_block* current_mb = NULL;
   
-  while(current_mb) {
-    if (!final_free_mem_block || current_mb->blk_size >= sz){    
-        mem_block = ptr_to_mb((void*)current_mb);
-        current_sb = (struct supberblock*)(
-          GET_DATA_FROM_MEM_BLOCK(mem_block)
-        );
-        if (current_sb->size_class == sz) {
-          if(!final_sb
-              || final_sb->free_mem > current_sb->free_mem){
-            *final_free_mem_block = current_mb;
-            final_sb = current_sb;
-          }        
-        }
-    }        
-    current_mb =  current_mb->next_free;
+  while(current_sb) {
+    //if (current_sb->size_class == sz) {
+      find_free_mem_block(current_sb->free_list, &current_mb, sz);
+      if (current_mb) {
+        *final_free_mem_block = current_mb;
+        final_sb = current_sb;
+        return final_sb;
+      }        
+    //}
+    current_sb =  current_sb->next;
   }
 
   return final_sb;
@@ -464,12 +458,12 @@ struct superblock* thread_acquire_superblock(struct thread_meta* theap, uint32_t
   new_sb->size_class = sz;
 
   // otherwise we acquired a superblock, now we just need to set up the metadata.
-  add_to_free_list(
+  /*add_to_free_list(
     &theap->free_list, 
     (struct mem_block*)(
       (char*)new_sb + sizeof(struct superblock)
     )
-  );   
+  );*/   
 
   return new_sb;
 }
@@ -530,7 +524,7 @@ uint32_t free_mem_block(struct mem_block* mem_block, struct mem_block** free_lis
  */
 void *mm_malloc(size_t sz) // ABE
 {
-  sz = adjust_class_size(sz);
+  //sz = adjust_class_size(sz);
   
   if (sz > LARGE_OBJECT_DATA_SIZE) {
     // the size they are trying to allocate is too large to store in a superblock,
@@ -556,10 +550,13 @@ void *mm_malloc(size_t sz) // ABE
         UNLOCK(curr_theap->thread_lock);
         return NULL;
       }      
-      find_free_mem_block(curr_theap->free_list, &free_mb, sz);
+      find_free_mem_block(free_sb->free_list, &free_mb, sz);
   }
   
-  uint32_t mem_allocated = allocate_memory(free_mb, sz, &curr_theap->free_list);
+  uint32_t mem_allocated = allocate_memory(free_mb, sz, &free_sb->free_list);
+  remove_thread_heap(free_sb);
+  add_to_thread_heap(curr_theap, free_sb);
+  
   free_sb->free_mem -= mem_allocated;
   curr_theap->used += mem_allocated; 
   
@@ -585,7 +582,7 @@ void free_block(struct thread_meta* theap, struct superblock* sb, void *data){
   // Find the corresponding mem_block metadata for data
   struct mem_block* mem_block = GET_MEM_BLOCK_FROM_DATA(data); 
   // actually free the memory block
-  uint32_t freed = free_mem_block(mem_block, &(theap->free_list));
+  uint32_t freed = free_mem_block(mem_block, &(sb->free_list));
   sb->free_mem += freed;
   sb->thread_heap->used -= freed;
 }
@@ -610,12 +607,12 @@ void reduce_thread_heap(struct thread_meta* theap, struct superblock* sb) {
   
     // Reduce the number of superblock that the thread heap has
   theap->sb_count--;
-  remove_from_free_list(
+  /*remove_from_free_list(
     &theap->free_list, 
     (struct mem_block*)(
       (char*) sb + sizeof(struct superblock)
     )
-  );
+  );*/
 
   LOCK(mem_allocator->global_heap->thread_lock);
   
