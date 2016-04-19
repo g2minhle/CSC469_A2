@@ -2,6 +2,7 @@ BENCHDIR := benchmarks
 DIRS := cache-scratch cache-thrash larson linux-scalability threadtest
 
 all:
+	export TOPDIR=`pwd`
 	cd util; make
 	cd allocators; make
 	for dir in $(DIRS); do \
